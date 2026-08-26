@@ -4,6 +4,7 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(express.json({ limit: '2mb' }));
 // ============================================================
 // TOUR MANAGER - AUTENTICACION Y PERMISOS
