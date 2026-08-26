@@ -1,0 +1,10 @@
+{
+  "name": "tour-manager-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tour Manager online para Secreto La Fortuna Tours",
+  "main": "server.js",
+  "scripts": {"start":"node server.js","dev":"node server.js"},
+  "engines": {"node": ">=20"},
+  "dependencies": {"express":"^5.1.0","pg":"^8.16.3","helmet":"^8.1.0"}
+}

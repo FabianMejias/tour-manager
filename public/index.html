@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tour Manager — Secreto La Fortuna Tours</title>
+<style>
+:root{--nav:#102a43;--accent:#0f766e;--bg:#f4f6f8;--card:#fff;--line:#e5e7eb;--muted:#64748b;--danger:#b91c1c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#17202a;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{background:var(--nav);color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:20px;margin:0 0 3px}header small{opacity:.8}
+nav{background:#fff;border-bottom:1px solid var(--line);padding:11px 16px;display:flex;gap:7px;overflow:auto}
+nav button{border:0;background:#eef2f7;border-radius:8px;padding:9px 13px;white-space:nowrap;cursor:pointer}
+nav button.active{background:var(--accent);color:#fff}
+main{max-width:1450px;margin:auto;padding:20px}.view{display:none}.view.active{display:block}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+button{font:inherit;cursor:pointer}.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 14px}.secondary{background:#fff;color:#17202a;border:1px solid #cbd5e1;border-radius:8px;padding:9px 13px}.danger{background:var(--danger);color:#fff;border:0;border-radius:8px;padding:9px 13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:17px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:13px}.metric{font-size:27px;font-weight:700;margin-top:6px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.full{grid-column:1/-1}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.field textarea{min-height:75px}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:17px}.filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.filters .field{min-width:180px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line)}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{background:#f8fafc}
+.badge{display:inline-block;border-radius:999px;padding:4px 8px;background:#ecfdf5;color:#047857;font-size:12px}.pending{background:#fff7ed;color:#c2410c}.empty{text-align:center;padding:28px;color:var(--muted)}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modal.open{display:flex}.modalbox{background:#fff;border-radius:14px;max-width:1000px;width:100%;max-height:94vh;overflow:auto;padding:22px}
+.preview{background:#f8fafc;padding:15px;border-radius:9px}.document{background:#fff;border:1px solid #ddd;padding:25px;max-width:720px;margin:auto}.center{text-align:center}.meta{line-height:1.6}.total{font-size:21px;font-weight:700;margin-top:10px}
+.notice{background:#fff7ed;border:1px solid #fed7aa;padding:10px;border-radius:8px;color:#9a3412;margin-bottom:12px}
+.report-tabs{display:flex;gap:8px;flex-wrap:wrap}.report{display:none}.report.active{display:block}
+@media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.cards,.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+@media print{@page{size:80mm auto;margin:0}html,body{width:80mm;background:#fff}body>*{display:none!important}#printArea{display:block!important;width:80mm}.ticket{width:72mm;margin:auto;padding:3mm 0;font-family:monospace;font-size:11px;line-height:1.25}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:5px 0}.ticket table{border:0}.ticket td{border:0;padding:1px}.right{text-align:right}}
+</style>
+</head>
+<body>
+<header><div><h1>Secreto La Fortuna Tours</h1><small>3-101-754390 S.A. · +506 2479-7047 · secretolafortunatours@gmail.com</small></div><div>Tour Manager</div></header>
+<nav id="nav"></nav>
+<main id="app"></main>
+<div id="modal" class="modal"><div class="modalbox" id="modalBox"></div></div>
+<div id="printArea" style="display:none"></div>
+
+<script>
+'use strict';
+const KEY='SLF_TOUR_MANAGER_V20', TAX=.13;
+const COMPANY={commercial:'Secreto La Fortuna Tours',legal:'3-101-754390 S.A.',id:'3-101-754390',phone:'+506 2479-7047',email:'secretolafortunatours@gmail.com',address:'La Fortuna, en Hotel Secreto La Fortuna'};
+const VIEWS=[['dashboard','Dashboard'],['orders','Órdenes de compra'],['payments','Pagos'],['sales','Ventas'],['reports','Reportes'],['clients','Clientes'],['tours','Tours'],['suppliers','Proveedores'],['sellers','Vendedores']];
+const EMPTY={clients:[],tours:[],suppliers:[],sellers:[],orders:[],sales:[],payments:[],seq:{OP:0,OC:0,V:0,P:0}};
+let db=structuredClone(EMPTY),view='dashboard', appReady=false;
+
+async function loadDB(){const r=await fetch('/api/state');if(!r.ok)throw new Error('No se pudo cargar la base de datos');return await r.json()}
+async function saveDB(){const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(db)});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'No se pudo guardar');}render()}
+function uid(){return crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random()}
+function next(type){db.seq[type]=(db.seq[type]||0)+1;return type+'-'+String(db.seq[type]).padStart(6,'0')}
+function $(id){return document.getElementById(id)}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function money(v){return '$'+Number(v||0).toFixed(2)}
+function calc(base){base=Number(base||0);return{subtotal:base,tax:base*TAX,total:base*(1+TAX)}}
+function supplier(id){return db.suppliers.find(x=>x.id===id)?.name||''}
+function seller(id){return db.sellers.find(x=>x.id===id)?.name||''}
+function closeModal(){$('modal').classList.remove('open')}
+function modal(title,body){$('modalBox').innerHTML='<h2>'+title+'</h2>'+body;$('modal').classList.add('open')}
+function preview(title,body,printAction){modal(title,`<div class="preview">${body}</div><div class="actions"><button class="secondary" onclick="closeModal()">Cerrar</button><button class="primary" onclick="${printAction}">Imprimir / Guardar PDF</button></div>`)}
+function printRaw(content){$('printArea').innerHTML=content;$('printArea').style.display='block';window.print();$('printArea').style.display='none';$('printArea').innerHTML=''}
+
+function render(){
+ $('nav').innerHTML=VIEWS.map(v=>`<button class="${view===v[0]?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
+ $('app').innerHTML=view==='dashboard'?dashboard():view==='orders'?orders():view==='payments'?payments():view==='sales'?sales():view==='reports'?reports():view==='clients'?clients():view==='tours'?tours():view==='suppliers'?suppliers():sellers();
+ if(view==='payments')renderPayments();
+ if(view==='reports')renderReports();
+}
+function go(v){view=v;render()}
+
+function dashboard(){
+ const rev=db.sales.reduce((a,x)=>a+(x.subtotal-x.discountAmount),0),cost=db.orders.reduce((a,x)=>a+x.subtotal,0);
+ return `<div class="toolbar"><h2>Dashboard</h2></div><div class="cards">
+ <div class="card">Ventas sin IVA<div class="metric">${money(rev)}</div></div><div class="card">Costos sin IVA<div class="metric">${money(cost)}</div></div>
+ <div class="card">Margen<div class="metric">${money(rev-cost)}</div></div><div class="card">OCs pendientes<div class="metric">${db.orders.filter(o=>o.paymentStatus!=='Pagado').length}</div></div>
+ <div class="card">Ventas<div class="metric">${db.sales.length}</div></div></div>
+ <div class="card"><h3>Últimas órdenes</h3>${db.orders.length?`<table><tr><th>OC</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th></tr>${db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).slice(0,10).map(o=>`<tr><td>${o.number}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${o.serviceDate}</td><td>${money(o.total)}</td></tr>`).join('')}</table>`:'<div class="empty">No hay operaciones.</div>'}</div>`
+}
+
+function orders(){
+ const q=(window.orderQ||'').toLowerCase(),sf=window.orderSupplier||'';
+ const rows=db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).filter(o=>(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
+ return `<div class="toolbar"><div><h2>Órdenes de compra</h2><small>La OC se genera primero. La factura se crea opcionalmente desde la OC.</small></div><button class="primary" onclick="orderForm()">+ Nueva OC</button></div>
+ <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select onchange="window.orderSupplier=this.value;render()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}" ${sf===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar</label><input value="${esc(window.orderQ||'')}" oninput="window.orderQ=this.value;render()" placeholder="OC, cliente, tour..."></div></div></div>
+ <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${o.serviceDate}<br>${o.time||''}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
+}
+
+function orderForm(id=null){
+ if(!db.clients.length||!db.tours.length||!db.suppliers.length||!db.sellers.length)return alert('Primero cree cliente, tour, proveedor y vendedor.');
+ const o=id?db.orders.find(x=>x.id===id):null;
+ modal(o?'Editar OC':'Nueva OC',`<div class="grid">
+ <div class="field"><label>Cliente / cuenta</label><select id="ocClient">${db.clients.map(c=>`<option value="${c.id}" ${c.id===o?.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+ <div class="field"><label>Nombre del Cliente / pasajero *</label><input id="ocPassenger" value="${esc(o?.customerName||'')}"></div>
+ <div class="field"><label>Tour</label><select id="ocTour" onchange="orderCostFromTour()">${db.tours.map(t=>`<option value="${t.id}" ${t.id===o?.tourId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
+ <div class="field"><label>Proveedor</label><select id="ocSupplier">${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===o?.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+ <div class="field"><label>Vendedor *</label><select id="ocSeller"><option value="">Seleccione un vendedor</option>${db.sellers.map(s=>`<option value="${s.id}" ${s.id===o?.sellerId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+ <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${o?.issueDate||new Date().toISOString().slice(0,10)}"></div>
+ <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${o?.serviceDate||''}"></div>
+ <div class="field"><label>Hora</label><input id="ocTime" type="time" value="${o?.time||''}"></div>
+ <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
+ <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
+ <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"></div>
+ <div class="field"><label>Moneda</label><select id="ocCurrency"><option ${o?.currency!=='CRC'?'selected':''}>USD</option><option ${o?.currency==='CRC'?'selected':''}>CRC</option></select></div>
+ <div class="field full"><label>Observaciones</label><textarea id="ocNotes">${esc(o?.notes||'')}</textarea></div>
+ <div class="card full">Subtotal: <b id="ocSub"></b> · IVA 13%: <b id="ocTax"></b> · TOTAL: <b id="ocTotal"></b></div></div>
+ <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="${o?`saveOrder('${id}')`:'createOrder()'}">Guardar OC</button></div>`);
+ orderCalc()
+}
+function orderCostFromTour(){const t=db.tours.find(x=>x.id===$('ocTour').value);if(t)$('ocCost').value=t.cost;orderCalc()}
+function orderCalc(){const x=calc((+$('ocPax')?.value||0)*(+$('ocCost')?.value||0));$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
+function orderData(){
+ const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
+ if(!sellerId)return alert('Debe seleccionar un vendedor.'); if(!passenger||!service)return alert('Complete el nombre del cliente/pasajero y la fecha de servicio.');
+ const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0));
+ return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
+}
+function createOrder(){const d=orderData();if(!d)return;const o={id:uid(),number:next('OC'),op:next('OP'),paymentStatus:'Pendiente',saleId:null,...d};db.orders.push(o);saveDB();closeModal();alert('OC '+o.number+' creada.')}
+function saveOrder(id){const o=db.orders.find(x=>x.id===id),d=orderData();if(!o||!d)return;Object.assign(o,d);saveDB();closeModal();alert('OC '+o.number+' actualizada.')}
+
+function company(title){return `<div class="center"><b>${COMPANY.commercial}</b><br>${COMPANY.legal}<br>${COMPANY.phone}<br>${COMPANY.email}<br>${COMPANY.address}<hr><b>${title}</b></div>`}
+function orderDoc(o,ticket=false){const base=company('ORDEN DE COMPRA');return ticket?`<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>IVA 13% ${money(o.tax)}<br><b>TOTAL ${money(o.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>IVA 13%: ${money(o.tax)}<div class="total">TOTAL: ${money(o.total)}</div><p>${esc(o.notes||'')}</p></div>`}
+function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
+function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(orderDoc(o,true))}
+
+function payments(){
+ return `<div class="toolbar"><h2>Pagos a proveedores</h2></div>
+ <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select id="paySupplier"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar OC / operación / cliente</label><input id="paySearch" placeholder="OC-000001"></div><button class="secondary" onclick="paySelectAll()">Seleccionar todos</button><button class="secondary" onclick="payClear()">Limpiar</button></div><div id="pendingPayments"></div><div class="actions"><button class="primary" onclick="payOpenForm()">Aplicar pago</button></div></div>
+ <div class="card"><h3>Historial de pagos</h3><div class="filters"><div class="field"><label>Proveedor</label><select id="historySupplier"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar pago / OC / comprobante</label><input id="historySearch" placeholder="P-000001 o TRX-123"></div></div><div id="paymentHistory"></div></div>`
+}
+function renderPayments(){
+ const sf=$('paySupplier').value,q=$('paySearch').value.trim().toLowerCase();
+ const rows=db.orders.filter(o=>o.paymentStatus!=='Pagado'&&(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
+ $('pendingPayments').innerHTML=rows.length?`<table><tr><th><input id="payAll" type="checkbox" onchange="paySelectAll(this.checked)"></th><th>OC</th><th>Proveedor</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th><th></th></tr>${rows.map(o=>`<tr><td><input class="payItem" type="checkbox" value="${o.id}"></td><td>${o.number}</td><td>${esc(supplier(o.supplierId))}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${o.serviceDate}</td><td>${money(o.total)}</td><td><button class="secondary" onclick="previewOrder('${o.id}')">Ver OC</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay OCs pendientes con esos filtros.</div>';
+ const hf=$('historySupplier').value,hq=$('historySearch').value.trim().toLowerCase();
+ const ps=db.payments.filter(p=>(!hf||p.supplierId===hf)&&(!hq||[p.number,p.receipt,supplier(p.supplierId),...(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)?.number||'')].join(' ').toLowerCase().includes(hq))).slice().reverse();
+ $('paymentHistory').innerHTML=ps.length?`<table><tr><th>Pago</th><th>Proveedor</th><th>Fecha</th><th>Comprobante</th><th>Total</th><th>OCs</th><th>Acción</th></tr>${ps.map(p=>`<tr><td>${p.number}</td><td>${esc(supplier(p.supplierId))}</td><td>${p.date}</td><td>${esc(p.receipt)}</td><td>${money(p.total)}</td><td>${(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)?.number||'').join(', ')}</td><td><button class="secondary" onclick="previewPayment('${p.id}')">Vista previa</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay pagos registrados.</div>';
+}
+function paySelectAll(force){const items=document.querySelectorAll('.payItem');items.forEach(x=>x.checked=force===undefined?true:force)}
+function payClear(){document.querySelectorAll('.payItem').forEach(x=>x.checked=false);if($('payAll'))$('payAll').checked=false}
+function selectedOrders(){return [...document.querySelectorAll('.payItem:checked')].map(x=>db.orders.find(o=>o.id===x.value)).filter(Boolean)}
+let pendingPaymentOrderIds=[];
+function payOpenForm(){
+ const os=selectedOrders();if(!os.length)return alert('Seleccione al menos una OC para pagar.');
+ const ss=[...new Set(os.map(o=>o.supplierId))];if(ss.length!==1)return alert('Seleccione OCs de un solo proveedor.');
+ const total=os.reduce((a,o)=>a+Number(o.total||0),0);
+ pendingPaymentOrderIds=os.map(o=>o.id);
+ modal('Registrar pago',`<div class="notice"><b>${os.length}</b> OC(s) · Proveedor: <b>${esc(supplier(ss[0]))}</b> · Total: <b>${money(total)}</b></div>
+ <div class="grid"><div class="field"><label>Fecha de pago *</label><input id="paymentDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Número de comprobante *</label><input id="paymentReceipt" placeholder="TRX-12345"></div></div>
+ <div class="actions"><button id="cancelPayment" class="secondary">Cancelar</button><button id="applyPaymentBtn" class="primary">Aplicar pago</button></div>`);
+ $('cancelPayment').addEventListener('click',closeModal);
+ $('applyPaymentBtn').addEventListener('click',applyPayment);
+}
+function applyPayment(){
+ const ids=[...pendingPaymentOrderIds];
+ if(!ids.length)return alert('No hay OCs seleccionadas para este pago.');
+ const date=$('paymentDate').value,receipt=$('paymentReceipt').value.trim();if(!date||!receipt)return alert('Complete fecha y número de comprobante.');
+ const os=ids.map(i=>db.orders.find(o=>o.id===i)).filter(Boolean),ss=[...new Set(os.map(o=>o.supplierId))];
+ if(!os.length||ss.length!==1)return alert('Selección de pago inválida.');
+ if(os.some(o=>o.paymentStatus==='Pagado'))return alert('Una OC seleccionada ya está pagada. Actualice la pantalla.');
+ const p={id:uid(),number:next('P'),supplierId:ss[0],date,receipt,total:os.reduce((a,o)=>a+Number(o.total||0),0),orderIds:os.map(o=>o.id)};
+ db.payments.push(p);os.forEach(o=>{o.paymentStatus='Pagado';o.paymentDate=date;o.paymentReceipt=receipt;o.paymentId=p.id});
+ pendingPaymentOrderIds=[];
+ saveDB();closeModal();alert('Pago '+p.number+' aplicado correctamente.');
+}
+function paymentDoc(p){const os=(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)).filter(Boolean);return `<div class="document">${company('COMPROBANTE DE PAGO A PROVEEDOR')}<div class="meta"><b>Pago:</b> ${p.number}<br><b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br><b>Fecha:</b> ${p.date}<br><b>Comprobante:</b> ${esc(p.receipt)}</div><hr>${os.map(o=>`${o.number} · ${esc(o.customerName)} · ${esc(o.tour)} · ${money(o.total)}`).join('<br>')}<div class="total">TOTAL PAGADO: ${money(p.total)}</div></div>`}
+function previewPayment(id){const p=db.payments.find(x=>x.id===id);if(p)preview('Vista previa — '+p.number,paymentDoc(p),`printPayment('${id}')`)}
+function printPayment(id){const p=db.payments.find(x=>x.id===id);if(!p)return;const os=(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)).filter(Boolean);printRaw(`<div class="ticket">${company('COMPROBANTE DE PAGO')}<b>Pago:</b> ${p.number}<br><b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br><b>Fecha:</b> ${p.date}<br><b>Comprobante:</b> ${esc(p.receipt)}<hr>${os.map(o=>`${o.number} · ${esc(o.tour)} · ${money(o.total)}<br>`).join('')}<hr><b>TOTAL ${money(p.total)}</b></div>`)}
+
+function sales(){
+ const rows=db.sales.slice().sort((a,b)=>b.number.localeCompare(a.number));
+ return `<div class="toolbar"><h2>Ventas / facturas internas</h2><small>La venta se genera opcionalmente desde la OC.</small></div>
+ <div class="card">${rows.length?`<table><tr><th>Venta</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Servicio</th><th>Total</th><th>Acción</th></tr>${rows.map(s=>`<tr><td>${s.number}</td><td>${s.op}</td><td>${esc(s.customerName)}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${s.serviceDate}</td><td>${money(s.total)}</td><td><button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay ventas. Genere la factura desde una OC.</div>'}</div>`
+}
+function saleForm(orderId){
+ const o=db.orders.find(x=>x.id===orderId);if(!o)return;if(o.saleId)return alert('Esta OC ya tiene factura.');
+ const t=db.tours.find(x=>x.id===o.tourId);
+ modal('Generar factura desde '+o.number,`<div class="grid"><div class="field"><label>Cliente</label><input disabled value="${esc(o.customerName)}"></div><div class="field"><label>Tour</label><input disabled value="${esc(o.tour)}"></div><div class="field"><label>Precio de venta unitario *</label><input id="salePrice" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Descuento %</label><input id="saleDiscount" type="number" step=".01" value="0"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createSale('${orderId}')">Generar factura</button></div>`)
+}
+function createSale(orderId){
+ const o=db.orders.find(x=>x.id===orderId),price=+$('salePrice').value||0,dp=+$('saleDiscount').value||0;
+ if(price<=0)return alert('Ingrese el precio de venta.');
+ const subtotal=o.pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount);
+ const s={id:uid(),number:next('V'),op:o.op,orderId:o.id,clientId:o.clientId,customerName:o.customerName,tourId:o.tourId,tour:o.tour,sellerId:o.sellerId,seller:o.seller,serviceDate:o.serviceDate,pax:o.pax,unitPrice:price,discount:dp,subtotal,discountAmount:discount,tax:x.tax,total:x.total,currency:o.currency};
+ db.sales.push(s);o.saleId=s.id;saveDB();closeModal();alert('Factura '+s.number+' creada.');
+}
+function saleDoc(s,ticket=false){const base=company('FACTURA INTERNA DE VENTA');return ticket?`<div class="ticket">${base}<b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Servicio:</b> ${s.serviceDate}<hr>Subtotal ${money(s.subtotal)}<br>Descuento -${money(s.discountAmount)}<br>IVA 13% ${money(s.tax)}<br><b>TOTAL ${money(s.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Fecha de servicio:</b> ${s.serviceDate}<br><b>Pasajeros:</b> ${s.pax}</div><hr>Subtotal: ${money(s.subtotal)}<br>Descuento: -${money(s.discountAmount)}<br>IVA 13%: ${money(s.tax)}<div class="total">TOTAL: ${money(s.total)}</div></div>`}
+function previewSale(id){const s=db.sales.find(x=>x.id===id);if(s)preview('Vista previa — '+s.number,saleDoc(s),`printSale('${id}')`)}
+function printSale(id){const s=db.sales.find(x=>x.id===id);if(s)printRaw(saleDoc(s,true))}
+
+function reports(){return `<div class="toolbar"><h2>Reportes</h2></div><div class="card"><button class="primary" onclick="reportTab('future')">1. Tours por fecha de servicio</button> <button class="secondary" onclick="reportTab('seller')">2. Vendedores</button> <button class="secondary" onclick="reportTab('analysis')">3. Análisis de ventas</button></div>
+<div id="repFuture" class="report active card"><h3>Tours por fecha de servicio</h3><p>La fecha utilizada es la fecha en que se debe operar el tour, no la fecha de venta.</p><div class="filters"><div class="field"><label>Desde</label><input id="rFutureFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rFutureTo" type="date"></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportFuture()">Excel</button></div><div id="futureResult"></div></div>
+<div id="repSeller" class="report card"><h3>Vendedores por fecha de servicio</h3><div class="filters"><div class="field"><label>Desde</label><input id="rSellerFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rSellerTo" type="date"></div><div class="field"><label>Vendedor</label><select id="rSeller"><option value="">Todos</option>${db.sellers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportSeller()">Excel</button></div><div id="sellerResult"></div></div>
+<div id="repAnalysis" class="report card"><h3>Análisis configurable</h3><div class="filters"><div class="field"><label>Desde</label><input id="rAFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rATo" type="date"></div><div class="field"><label>Agrupar por</label><select id="rGroup"><option value="tour">Tour</option><option value="supplier">Proveedor</option><option value="seller">Vendedor</option><option value="client">Cliente</option></select></div><div class="field"><label>Ordenar</label><select id="rOrder"><option value="desc">Mayor a menor</option><option value="asc">Menor a mayor</option></select></div><div class="field"><label>Límite</label><select id="rLimit"><option value="5">5</option><option value="10">10</option><option value="25">25</option><option value="all">Todos</option></select></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportAnalysis()">Excel</button></div><div id="analysisResult"></div></div>`}
+function reportTab(which){document.querySelectorAll('.report').forEach(x=>x.style.display='none');$('rep'+(which==='future'?'Future':which==='seller'?'Seller':'Analysis')).style.display='block'}
+function reportRows(){const f=$('rFutureFrom')?.value||'',t=$('rFutureTo')?.value||'';return db.orders.filter(o=>(!f||o.serviceDate>=f)&&(!t||o.serviceDate<=t)).sort((a,b)=>(a.serviceDate+a.time).localeCompare(b.serviceDate+b.time))}
+function renderReports(){
+ if(!$('futureResult'))return;
+ const future=reportRows();$('futureResult').innerHTML=future.length?`<table><tr><th>Fecha</th><th>Hora</th><th>Tour</th><th>Cliente</th><th>Vendedor</th><th>Proveedor</th><th>Pickup</th><th>Pax</th><th>OC</th></tr>${future.map(o=>`<tr><td>${o.serviceDate}</td><td>${o.time||'-'}</td><td>${esc(o.tour)}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(supplier(o.supplierId))}</td><td>${esc(o.place||'-')}</td><td>${o.pax}</td><td>${o.number}</td></tr>`).join('')}</table>`:'<div class="empty">No hay servicios para el rango indicado.</div>';
+ const sf=$('rSellerFrom')?.value||'',st=$('rSellerTo')?.value||'',sv=$('rSeller')?.value||'';
+ const ss=db.sales.filter(s=>(!sf||s.serviceDate>=sf)&&(!st||s.serviceDate<=st)&&(!sv||s.sellerId===sv));
+ $('sellerResult').innerHTML=ss.length?`<table><tr><th>Fecha servicio</th><th>Vendedor</th><th>Tour</th><th>Cliente</th><th>Venta</th><th>Costo</th><th>Margen</th><th>%</th><th>Comisión</th></tr>${ss.map(s=>{const o=db.orders.find(x=>x.id===s.orderId),cost=o?.subtotal||0,sale=s.subtotal-s.discountAmount,margin=sale-cost,rate=db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0;return `<tr><td>${s.serviceDate}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${esc(s.customerName)}</td><td>${money(sale)}</td><td>${money(cost)}</td><td>${money(margin)}</td><td>${rate}%</td><td>${money(Math.max(0,margin)*rate/100)}</td></tr>`}).join('')}</table>`:'<div class="empty">No hay ventas para el rango.</div>';
+ const af=$('rAFrom')?.value||'',at=$('rATo')?.value||'',g=$('rGroup')?.value||'tour',ord=$('rOrder')?.value||'desc',lim=$('rLimit')?.value||'5';
+ const base=db.orders.filter(o=>(!af||o.serviceDate>=af)&&(!at||o.serviceDate<=at)),map={};
+ base.forEach(o=>{const key=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;if(!map[key])map[key]={name:key,services:0,pax:0,sales:0,cost:0};map[key].services++;map[key].pax+=o.pax||0;map[key].cost+=o.subtotal||0;const s=db.sales.find(x=>x.orderId===o.id);if(s)map[key].sales+=s.subtotal-s.discountAmount});
+ let ar=Object.values(map).sort((a,b)=>ord==='desc'?b.services-a.services:a.services-b.services);if(lim!=='all')ar=ar.slice(0,+lim);
+ $('analysisResult').innerHTML=ar.length?`<table><tr><th>${g==='tour'?'Tour':g==='supplier'?'Proveedor':g==='seller'?'Vendedor':'Cliente'}</th><th>Servicios</th><th>Pax</th><th>Ventas sin IVA</th><th>Costos sin IVA</th><th>Margen</th></tr>${ar.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.services}</td><td>${x.pax}</td><td>${money(x.sales)}</td><td>${money(x.cost)}</td><td>${money(x.sales-x.cost)}</td></tr>`).join('')}</table>`:'<div class="empty">No hay datos.</div>';
+}
+function toExcel(rows,file){if(!rows.length)return alert('No hay datos para exportar.');const h=Object.keys(rows[0]),csv=[h.join('\\t'),...rows.map(r=>h.map(k=>String(r[k]??'').replace(/\\t/g,' ')).join('\\t'))].join('\\n'),b=new Blob(['\\ufeff'+csv],{type:'application/vnd.ms-excel;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=file;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+function exportFuture(){toExcel(reportRows().map(o=>({OC:o.number,FechaServicio:o.serviceDate,Hora:o.time,Tour:o.tour,Cliente:o.customerName,Vendedor:o.seller,Proveedor:supplier(o.supplierId),Pickup:o.place,Pax:o.pax,Total:money(o.total)})),'tours_fecha_servicio.xls')}
+function exportSeller(){const f=$('rSellerFrom').value,t=$('rSellerTo').value,sv=$('rSeller').value,ss=db.sales.filter(s=>(!f||s.serviceDate>=f)&&(!t||s.serviceDate<=t)&&(!sv||s.sellerId===sv));toExcel(ss.map(s=>{const o=db.orders.find(x=>x.id===s.orderId),cost=o?.subtotal||0,sale=s.subtotal-s.discountAmount,margin=sale-cost,rate=db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0;return{FechaServicio:s.serviceDate,Vendedor:s.seller,Tour:s.tour,Cliente:s.customerName,Venta:money(sale),Costo:money(cost),Margen:money(margin),ComisionPorcentaje:rate+'%',Comision:money(Math.max(0,margin)*rate/100)}}),'vendedores_comisiones.xls')}
+function exportAnalysis(){const f=$('rAFrom').value,t=$('rATo').value,g=$('rGroup').value,rows=db.orders.filter(o=>(!f||o.serviceDate>=f)&&(!t||o.serviceDate<=t)),map={};rows.forEach(o=>{const k=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;if(!map[k])map[k]={Nombre:k,Servicios:0,Pasajeros:0,Ventas:0,Costos:0};map[k].Servicios++;map[k].Pasajeros+=o.pax||0;map[k].Costos+=o.subtotal||0;const s=db.sales.find(x=>x.orderId===o.id);if(s)map[k].Ventas+=s.subtotal-s.discountAmount});toExcel(Object.values(map).map(x=>({Nombre:x.Nombre,Servicios:x.Servicios,Pasajeros:x.Pasajeros,VentasSinIVA:money(x.Ventas),CostosSinIVA:money(x.Costos),Margen:money(x.Ventas-x.Costos)})),'analisis_tours_proveedores.xls')}
+
+function clients(){return listView('Clientes','client',db.clients.map(c=>[c.name,c.type||'',c.phone||'',c.currency||'USD']),['Nombre','Tipo','Teléfono','Moneda'])}
+function suppliers(){return listView('Proveedores','supplier',db.suppliers.map(s=>[s.name,s.contact||'',s.phone||'',s.email||'']),['Proveedor','Contacto','Teléfono','Email'])}
+function sellers(){return listView('Vendedores','seller',db.sellers.map(s=>[s.name,s.commissionRate+'%']),['Vendedor','Comisión sobre margen'])}
+function listView(title,type,rows,heads){return `<div class="toolbar"><h2>${title}</h2><button class="primary" onclick="simpleForm('${type}')">+ Nuevo</button></div><div class="card">${rows.length?`<table><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>`:'<div class="empty">No hay registros.</div>'}</div>`}
+function simpleForm(type){
+ const title=type==='client'?'Nuevo cliente':type==='supplier'?'Nuevo proveedor':'Nuevo vendedor';
+ modal(title,`<div class="grid"><div class="field"><label>Nombre *</label><input id="simpleName"></div>${type==='client'?'<div class="field"><label>Tipo</label><select id="simpleType"><option>Cliente directo</option><option>Hotel</option><option>Agencia</option></select></div>':''}${type==='supplier'?'<div class="field"><label>Contacto</label><input id="simpleContact"></div>':''}<div class="field"><label>Teléfono</label><input id="simplePhone"></div><div class="field"><label>${type==='supplier'?'Email':'Comisión (%)'}</label><input id="simpleExtra" ${type==='supplier'?'type="email"':'type="number" step=".01"'}></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSimple('${type}')">Guardar</button></div>`)
+}
+function saveSimple(type){const n=$('simpleName').value.trim();if(!n)return alert('Ingrese el nombre.');if(type==='client')db.clients.push({id:uid(),name:n,type:$('simpleType').value,phone:$('simplePhone').value,currency:'USD'});if(type==='supplier')db.suppliers.push({id:uid(),name:n,contact:$('simpleContact').value,phone:$('simplePhone').value,email:$('simpleExtra').value});if(type==='seller')db.sellers.push({id:uid(),name:n,commissionRate:+$('simpleExtra').value||0});saveDB();closeModal()}
+function tours(){return `<div class="toolbar"><h2>Tours y tarifas</h2><button class="primary" onclick="tourForm()">+ Nuevo tour</button></div><div class="card">${db.tours.length?`<table><tr><th>Tour</th><th>Precio hotel</th><th>Costo</th><th>Margen</th><th></th></tr>${db.tours.map(t=>`<tr><td>${esc(t.name)}</td><td>${money(t.hotel)}</td><td>${money(t.cost)}</td><td>${money(t.hotel-t.cost)}</td><td><button class="secondary" onclick="tourForm('${t.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay tours.</div>'}</div>`}
+function tourForm(id=null){const t=id?db.tours.find(x=>x.id===id):null;modal(t?'Editar tour':'Nuevo tour',`<div class="grid"><div class="field"><label>Tour *</label><input id="tourName" value="${esc(t?.name||'')}"></div><div class="field"><label>Precio hotel</label><input id="tourHotel" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Costo</label><input id="tourCost" type="number" step=".01" value="${t?.cost||0}"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveTour('${id||''}')">Guardar</button></div>`)}
+function saveTour(id){const n=$('tourName').value.trim();if(!n)return alert('Ingrese el tour.');const d={name:n,hotel:+$('tourHotel').value||0,cost:+$('tourCost').value||0};if(id)Object.assign(db.tours.find(t=>t.id===id),d);else db.tours.push({id:uid(),...d});saveDB();closeModal()}
+
+async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
+init();
+</script>
+</body>
+</html>
