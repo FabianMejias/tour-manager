@@ -30,7 +30,20 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 @media print{@page{size:80mm auto;margin:0}html,body{width:80mm;background:#fff}body>*{display:none!important}#printArea{display:block!important;width:80mm}.ticket{width:72mm;margin:auto;padding:3mm 0;font-family:monospace;font-size:11px;line-height:1.25}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:5px 0}.ticket table{border:0}.ticket td{border:0;padding:1px}.right{text-align:right}}
 </style>
 </head>
-<body>
+<body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
+    <h2 id="tm-auth-title" style="margin-top:0">Tour Manager</h2>
+    <p id="tm-auth-text" style="color:#64748b">Inicia sesión para continuar.</p>
+    <form id="tm-auth-form">
+      <div id="tm-auth-name-wrap" style="display:none;margin-bottom:12px"><label>Nombre<input id="tm-auth-name" style="width:100%;padding:10px;margin-top:5px" autocomplete="name"></label></div>
+      <div style="margin-bottom:12px"><label>Correo<input id="tm-auth-email" type="email" required style="width:100%;padding:10px;margin-top:5px" autocomplete="username"></label></div>
+      <div style="margin-bottom:12px"><label>Contraseña<input id="tm-auth-password" type="password" required style="width:100%;padding:10px;margin-top:5px" autocomplete="current-password"></label></div>
+      <button type="submit" class="primary" style="width:100%" id="tm-auth-submit">Entrar</button>
+      <div id="tm-auth-msg" style="margin-top:10px;color:#b91c1c"></div>
+    </form>
+  </div>
+</div>
+
 <header><div><h1>Secreto La Fortuna Tours</h1><small>3-101-754390 S.A. · +506 2479-7047 · secretolafortunatours@gmail.com</small></div><div>Tour Manager</div></header>
 <nav id="nav"></nav>
 <main id="app"></main>
@@ -42,7 +55,10 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 'use strict';
 const KEY='SLF_TOUR_MANAGER_V20', TAX=.13;
 const COMPANY={commercial:'Secreto La Fortuna Tours',legal:'3-101-754390 S.A.',id:'3-101-754390',phone:'+506 2479-7047',email:'secretolafortunatours@gmail.com',address:'La Fortuna, en Hotel Secreto La Fortuna'};
-const VIEWS=[['dashboard','Dashboard'],['orders','Órdenes de compra'],['payments','Pagos'],['sales','Ventas'],['reports','Reportes'],['clients','Clientes'],['tours','Tours'],['suppliers','Proveedores'],['sellers','Vendedores']];
+const BASE_VIEWS=[['dashboard','Dashboard'],['orders','Órdenes de compra'],['payments','Pagos'],['sales','Ventas'],['reports','Reportes'],['clients','Clientes'],['tours','Tours'],['suppliers','Proveedores'],['sellers','Vendedores']];
+let VIEWS=BASE_VIEWS.slice();
+let TM_AUTH=null;
+function tmCan(p){ return TM_AUTH && (TM_AUTH.user.role==='admin' || TM_AUTH.permissions.includes(p)); }
 const EMPTY={clients:[],tours:[],suppliers:[],sellers:[],orders:[],sales:[],payments:[],seq:{OP:0,OC:0,V:0,P:0}};
 let db=structuredClone(EMPTY),view='dashboard', appReady=false;
 
@@ -62,8 +78,9 @@ function preview(title,body,printAction){modal(title,`<div class="preview">${bod
 function printRaw(content){$('printArea').innerHTML=content;$('printArea').style.display='block';window.print();$('printArea').style.display='none';$('printArea').innerHTML=''}
 
 function render(){
- $('nav').innerHTML=VIEWS.map(v=>`<button class="${view===v[0]?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
- $('app').innerHTML=view==='dashboard'?dashboard():view==='orders'?orders():view==='payments'?payments():view==='sales'?sales():view==='reports'?reports():view==='clients'?clients():view==='tours'?tours():view==='suppliers'?suppliers():sellers();
+ $('nav').innerHTML=VIEWS.map(v=>`<button class="${view===v[0]?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('') + (tmCan('users.view') ? `<button onclick="go('users')" class="${view==='users'?'active':''}">Usuarios</button>` : '') + `<button onclick="tmLogout()" style="margin-left:auto">Salir (${TM_AUTH?.user?.name||''})</button>`;
+ $('app').innerHTML=view==='users'?'':view==='dashboard'?dashboard():view==='orders'?orders():view==='payments'?payments():view==='sales'?sales():view==='reports'?reports():view==='clients'?clients():view==='tours'?tours():view==='suppliers'?suppliers():sellers();
+ if(view==='users'){ $('app').innerHTML=''; window.TourManagerUsers?.show(); } else { window.TourManagerUsers?.hide(); }
  if(view==='payments')renderPayments();
  if(view==='reports')renderReports();
 }
@@ -345,5 +362,27 @@ window.TourManagerUsers={show:async()=>{$('tm-users-admin').style.display='block
 })();
 </script>
 
+<script>
+async function tmAuthInit(){
+  const screen=document.getElementById('tm-auth-screen'), form=document.getElementById('tm-auth-form');
+  async function req(url,opt){const r=await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Error');return d}
+  function show(setup){screen.style.display='flex';document.getElementById('tm-auth-title').textContent=setup?'Configuración inicial':'Tour Manager';document.getElementById('tm-auth-text').textContent=setup?'No hay usuarios. Crea el administrador inicial.':'Inicia sesión para continuar.';document.getElementById('tm-auth-name-wrap').style.display=setup?'block':'none';document.getElementById('tm-auth-name').required=setup;document.getElementById('tm-auth-submit').textContent=setup?'Crear administrador':'Entrar';}
+  function hide(){screen.style.display='none'}
+  try{
+    const st=await req('/api/auth/status');
+    if(st.authenticated){
+      const p=await req('/api/auth/permissions'); TM_AUTH={user:st.user,permissions:p.permissions}; hide(); VIEWS=BASE_VIEWS.slice(); render(); return;
+    }
+    show(st.userCount===0);
+    form.onsubmit=async e=>{e.preventDefault();document.getElementById('tm-auth-msg').textContent='';try{
+      const setup=st.userCount===0; const body={email:document.getElementById('tm-auth-email').value,password:document.getElementById('tm-auth-password').value}; if(setup)body.name=document.getElementById('tm-auth-name').value;
+      const d=await req(setup?'/api/auth/bootstrap':'/api/auth/login',{method:'POST',body:JSON.stringify(body)});
+      const p=await req('/api/auth/permissions');TM_AUTH={user:d.user,permissions:p.permissions};hide();render();
+    }catch(err){document.getElementById('tm-auth-msg').textContent=err.message;}};
+  }catch(e){screen.style.display='flex';document.getElementById('tm-auth-msg').textContent='No fue posible conectar con el servidor.'}
+}
+async function tmLogout(){try{await fetch('/api/auth/logout',{method:'POST'});}finally{location.reload()}}
+document.addEventListener('DOMContentLoaded',tmAuthInit);
+</script>
 </body>
 </html>

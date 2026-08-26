@@ -38,6 +38,26 @@ const TM_PERMISSIONS = [
   'settings.view','settings.edit'
 ];
 
+app.get('/api/auth/status', async (req,res)=>{
+  try {
+    const r=await pool.query('SELECT COUNT(*)::int AS count FROM users');
+    res.json({userCount:r.rows[0].count, authenticated:!!req.session.user, user:req.session.user||null});
+  } catch(e){ res.status(500).json({error:'No fue posible consultar el estado de autenticación.'}); }
+});
+
+app.post('/api/auth/bootstrap', async (req,res)=>{
+  try {
+    const count=await pool.query('SELECT COUNT(*)::int AS count FROM users');
+    if(count.rows[0].count!==0) return res.status(409).json({error:'Ya existe un usuario. Utiliza el inicio de sesión.'});
+    const {name,email,password}=req.body||{};
+    if(!name||!email||!password||String(password).length<8) return res.status(400).json({error:'Nombre, correo y una contraseña de al menos 8 caracteres son obligatorios.'});
+    const hash=await bcrypt.hash(String(password),12);
+    const r=await pool.query(`INSERT INTO users(name,email,password_hash,role,active) VALUES($1,$2,$3,'admin',true) RETURNING id,name,email,role,active`,[String(name).trim(),String(email).trim().toLowerCase(),hash]);
+    req.session.user=r.rows[0];
+    res.status(201).json({user:r.rows[0]});
+  } catch(e){ res.status(500).json({error:'No fue posible crear el administrador inicial.'}); }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -259,6 +279,7 @@ async function replaceState(client, db) {
 }
 
 app.get('/api/state', async (req,res)=>{
+  if(!req.session.user) return res.status(401).json({error:'No autenticado.'});
   const client=await pool.connect();
   try { res.json(await getState(client)); }
   catch(e){ console.error(e); res.status(500).json({error:'No se pudo leer la base de datos'}); }
@@ -266,6 +287,7 @@ app.get('/api/state', async (req,res)=>{
 });
 
 app.put('/api/state', async (req,res)=>{
+  if(!req.session.user) return res.status(401).json({error:'No autenticado.'});
   const client=await pool.connect();
   try { await replaceState(client,req.body||{}); res.json({ok:true}); }
   catch(e){ console.error(e); res.status(500).json({ok:false,error:e.message}); }
