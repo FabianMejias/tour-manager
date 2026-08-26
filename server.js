@@ -4,6 +4,7 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const app = express();
+app.use(express.json({ limit: '2mb' }));
 // ============================================================
 // TOUR MANAGER - AUTENTICACION Y PERMISOS
 // ============================================================
@@ -210,7 +211,6 @@ if (!databaseUrl) {
 
 const pool = new Pool({ connectionString: databaseUrl, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
