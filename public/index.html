@@ -230,5 +230,120 @@ function saveTour(id){const n=$('tourName').value.trim();if(!n)return alert('Ing
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
 init();
 </script>
+
+<section id="tm-users-admin" style="display:none;padding:24px;max-width:1250px;margin:auto;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;">
+    <div><h2 style="margin:0 0 6px">Usuarios y permisos</h2><p style="margin:0;opacity:.7">Configura exactamente qué puede hacer cada usuario.</p></div>
+    <button type="button" id="tm-user-new">+ Nuevo usuario</button>
+  </div>
+  <div style="display:grid;grid-template-columns:280px 1fr;gap:18px">
+    <div style="border:1px solid #ddd;border-radius:12px;padding:14px;background:#fff">
+      <div id="tm-users-list"></div>
+    </div>
+    <div style="border:1px solid #ddd;border-radius:12px;padding:18px;background:#fff">
+      <form id="tm-user-form">
+        <input type="hidden" id="tm-user-id">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label>Nombre<input id="tm-user-name" required></label>
+          <label>Correo<input id="tm-user-email" type="email" required></label>
+          <label>Rol<select id="tm-user-role"><option value="user">Usuario</option><option value="admin">Administrador</option></select></label>
+          <label>Estado<select id="tm-user-active"><option value="true">Activo</option><option value="false">Inactivo</option></select></label>
+          <label style="grid-column:1/-1">Contraseña<input id="tm-user-password" type="password" autocomplete="new-password"><small>Vacío al editar = conservar contraseña.</small></label>
+        </div>
+        <h3>Permisos</h3>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button type="button" id="tm-perm-all">Seleccionar todo</button>
+          <button type="button" id="tm-perm-none">Quitar todo</button>
+        </div>
+        <div id="tm-permissions-grid"></div>
+        <div style="display:flex;gap:8px;margin-top:18px">
+          <button type="submit">Guardar usuario</button>
+          <button type="button" id="tm-user-cancel">Cancelar</button>
+        </div>
+        <div id="tm-user-message" style="margin-top:10px"></div>
+      </form>
+    </div>
+  </div>
+</section>
+<style>
+#tm-users-admin label{display:flex;flex-direction:column;gap:6px;font-weight:600}
+#tm-users-admin input,#tm-users-admin select{padding:9px;border:1px solid #ccc;border-radius:7px}
+#tm-users-admin button{padding:9px 13px;border:0;border-radius:7px;cursor:pointer}
+.tm-uitem{padding:11px;border-bottom:1px solid #eee;cursor:pointer}.tm-uitem strong{display:block}.tm-uitem small{opacity:.65}
+.tm-pgroup{border:1px solid #e3e3e3;border-radius:9px;margin:10px 0;overflow:hidden}
+.tm-ptitle{padding:9px 11px;background:#f6f6f6;font-weight:700}
+.tm-prow{display:grid;grid-template-columns:1fr 75px 75px 75px 75px;align-items:center;padding:8px 11px;border-top:1px solid #eee}
+.tm-prow input{width:17px;height:17px}
+@media(max-width:800px){#tm-users-admin>div:nth-child(2){grid-template-columns:1fr!important}#tm-user-form>div:first-of-type{grid-template-columns:1fr!important}.tm-prow{grid-template-columns:1fr 50px 50px 50px 50px}}
+</style>
+<script>
+(function(){
+const catalog=[
+['Clientes','clients',['view','create','edit','delete']],
+['Proveedores','suppliers',['view','create','edit','delete']],
+['Vendedores','sellers',['view','create','edit','delete']],
+['Tours','tours',['view','create','edit','delete']],
+['Órdenes de compra','purchase_orders',['view','create','edit','delete']],
+['Ventas','sales',['view','create','edit','delete']],
+['Pagos','payments',['view','create','edit','delete']],
+['Reportes','reports',['service_dates.view','sellers.view','sales_analysis.view','best_sellers.view']],
+['Usuarios','users',['view','create','edit','delete']],
+['Configuración','settings',['view','edit']]
+];
+const labels={view:'Ver',create:'Crear',edit:'Editar',delete:'Eliminar',
+'service_dates.view':'Tours por fecha','sellers.view':'Vendedores / comisiones',
+'sales_analysis.view':'Análisis de ventas','best_sellers.view':'Más vendidos'};
+const $=id=>document.getElementById(id);
+async function api(url,opt){const r=await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Error de servidor');return d}
+function renderPermissions(selected=[]){
+ const s=new Set(selected);
+ $('tm-permissions-grid').innerHTML=catalog.map(([title,prefix,acts])=>{
+  const report=prefix==='reports';
+  if(report) return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
+   acts.map(a=>{let p=prefix+'.'+a;return '<label class="tm-prow"><span>'+labels[a]+'</span><span></span><span><input type="checkbox" data-perm="'+p+'" '+(s.has(p)?'checked':'')+'></span><span></span><span></span></label>'}).join('')+'</div>';
+  return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
+   '<div class="tm-prow" style="font-weight:600"><span></span><span>Ver</span><span>Crear</span><span>Editar</span><span>Eliminar</span></div>'+
+   acts.map(a=>'<label class="tm-prow"><span>'+title+'</span><span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span><span></span><span></span><span></span></label>').join('')+
+   '</div>';
+ }).join('');
+ // For CRUD modules, one row per action would be confusing; replace with proper matrix.
+ document.querySelectorAll('.tm-pgroup').forEach((g,i)=>{
+  if(i===7) return;
+  const [title,prefix,acts]=catalog[i];
+  g.innerHTML='<div class="tm-ptitle">'+title+'</div><div class="tm-prow" style="font-weight:600"><span></span><span>Ver</span><span>Crear</span><span>Editar</span><span>Eliminar</span></div>'+
+   '<div class="tm-prow"><span>Permisos</span>'+acts.map(a=>'<span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span>').join('')+'</div>';
+ });
+}
+async function loadUsers(){
+ const d=await api('/api/users');
+ $('tm-users-list').innerHTML=d.users.map(u=>'<div class="tm-uitem" data-id="'+u.id+'"><strong>'+u.name+'</strong><small>'+u.email+'<br>'+(u.active?'Activo':'Inactivo')+'</small></div>').join('')||'<p>No hay usuarios.</p>';
+ document.querySelectorAll('.tm-uitem').forEach(x=>x.onclick=()=>editUser(x.dataset.id));
+}
+async function editUser(id){
+ const [uData,pData]=await Promise.all([api('/api/users'),api('/api/users/'+id+'/permissions')]);
+ const u=uData.users.find(x=>x.id===id); if(!u)return;
+ $('tm-user-id').value=u.id;$('tm-user-name').value=u.name;$('tm-user-email').value=u.email;
+ $('tm-user-role').value=u.role;$('tm-user-active').value=String(u.active);$('tm-user-password').value='';
+ renderPermissions(pData.permissions.filter(x=>x.allowed).map(x=>x.permission));
+ $('tm-user-message').textContent='';
+}
+function newUser(){ $('tm-user-id').value='';$('tm-user-form').reset();$('tm-user-role').value='user';$('tm-user-active').value='true';renderPermissions([]);$('tm-user-message').textContent='';}
+$('tm-user-new').onclick=newUser;$('tm-user-cancel').onclick=newUser;
+$('tm-perm-all').onclick=()=>document.querySelectorAll('#tm-permissions-grid input').forEach(x=>x.checked=true);
+$('tm-perm-none').onclick=()=>document.querySelectorAll('#tm-permissions-grid input').forEach(x=>x.checked=false);
+$('tm-user-form').onsubmit=async e=>{
+ e.preventDefault();try{
+  const id=$('tm-user-id').value, body={name:$('tm-user-name').value,email:$('tm-user-email').value,role:$('tm-user-role').value,active:$('tm-user-active').value==='true'};
+  if($('tm-user-password').value)body.password=$('tm-user-password').value;
+  const u=id?(await api('/api/users/'+id,{method:'PATCH',body:JSON.stringify(body)})).user:(await api('/api/users',{method:'POST',body:JSON.stringify(body)})).user;
+  const permissions=[...document.querySelectorAll('#tm-permissions-grid input:checked')].map(x=>x.dataset.perm);
+  await api('/api/users/'+u.id+'/permissions',{method:'PUT',body:JSON.stringify({permissions})});
+  $('tm-user-message').textContent='Usuario y permisos guardados correctamente.';await loadUsers();await editUser(u.id);
+ }catch(err){$('tm-user-message').textContent=err.message}
+};
+window.TourManagerUsers={show:async()=>{$('tm-users-admin').style.display='block';await loadUsers();newUser()},hide:()=>{$('tm-users-admin').style.display='none'}};
+})();
+</script>
+
 </body>
 </html>

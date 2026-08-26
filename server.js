@@ -4,6 +4,183 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const app = express();
+// ============================================================
+// TOUR MANAGER - AUTENTICACION Y PERMISOS
+// ============================================================
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'CHANGE-THIS-SESSION-SECRET',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  }
+}));
+
+const TM_PERMISSIONS = [
+  'dashboard.view',
+  'clients.view','clients.create','clients.edit','clients.delete',
+  'suppliers.view','suppliers.create','suppliers.edit','suppliers.delete',
+  'sellers.view','sellers.create','sellers.edit','sellers.delete',
+  'tours.view','tours.create','tours.edit','tours.delete',
+  'purchase_orders.view','purchase_orders.create','purchase_orders.edit','purchase_orders.delete',
+  'sales.view','sales.create','sales.edit','sales.delete',
+  'payments.view','payments.create','payments.edit','payments.delete',
+  'reports.service_dates.view',
+  'reports.sellers.view',
+  'reports.sales_analysis.view',
+  'reports.best_sellers.view',
+  'users.view','users.create','users.edit','users.delete',
+  'settings.view','settings.edit'
+];
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Correo y contraseña son obligatorios.' });
+    const r = await pool.query(
+      'SELECT id,name,email,password_hash,role,active FROM users WHERE lower(email)=lower($1) LIMIT 1',
+      [String(email).trim()]
+    );
+    if (!r.rows.length || !r.rows[0].active) return res.status(401).json({ error: 'Credenciales inválidas.' });
+    const u = r.rows[0];
+    if (!(await bcrypt.compare(String(password), u.password_hash))) {
+      return res.status(401).json({ error: 'Credenciales inválidas.' });
+    }
+    req.session.user = { id: u.id, name: u.name, email: u.email, role: u.role };
+    res.json({ user: req.session.user });
+  } catch (e) {
+    res.status(500).json({ error: 'No fue posible iniciar sesión.' });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  if (!req.session.user) return res.status(401).json({ authenticated: false });
+  const r = await pool.query(
+    'SELECT id,name,email,role,active FROM users WHERE id=$1 LIMIT 1',
+    [req.session.user.id]
+  );
+  if (!r.rows.length || !r.rows[0].active) {
+    return req.session.destroy(() => res.status(401).json({ authenticated: false }));
+  }
+  res.json({ authenticated: true, user: r.rows[0] });
+});
+
+app.get('/api/auth/permissions', async (req, res) => {
+  if (!req.session.user) return res.status(401).json({ error: 'No autenticado.' });
+  if (req.session.user.role === 'admin') return res.json({ permissions: TM_PERMISSIONS });
+  const r = await pool.query(
+    'SELECT permission FROM user_permissions WHERE user_id=$1 AND allowed=true ORDER BY permission',
+    [req.session.user.id]
+  );
+  res.json({ permissions: r.rows.map(x => x.permission) });
+});
+
+// Initial user administration endpoints.
+// They are intentionally protected by the admin role while the UI is being completed.
+app.get('/api/users', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'admin') return res.status(403).json({ error: 'Acceso denegado.' });
+  const r = await pool.query(
+    'SELECT id,name,email,role,active,created_at,updated_at FROM users ORDER BY name'
+  );
+  res.json({ users: r.rows });
+});
+
+app.post('/api/users', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'admin') return res.status(403).json({ error: 'Acceso denegado.' });
+  const { name, email, password, role='user', active=true } = req.body || {};
+  if (!name || !email || !password) return res.status(400).json({ error: 'Nombre, correo y contraseña son obligatorios.' });
+  const hash = await bcrypt.hash(String(password), 12);
+  try {
+    const r = await pool.query(
+      `INSERT INTO users(name,email,password_hash,role,active)
+       VALUES($1,$2,$3,$4,$5)
+       RETURNING id,name,email,role,active,created_at`,
+      [String(name).trim(), String(email).trim().toLowerCase(), hash, role, !!active]
+    );
+    res.status(201).json({ user: r.rows[0] });
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ese correo ya está registrado.' });
+    res.status(500).json({ error: 'No fue posible crear el usuario.' });
+  }
+});
+
+app.patch('/api/users/:id', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'admin') return res.status(403).json({ error: 'Acceso denegado.' });
+  const { name, email, role, active, password } = req.body || {};
+  const fields = [], vals = [];
+  if (name !== undefined) { fields.push(`name=$${vals.length+1}`); vals.push(String(name).trim()); }
+  if (email !== undefined) { fields.push(`email=$${vals.length+1}`); vals.push(String(email).trim().toLowerCase()); }
+  if (role !== undefined) { fields.push(`role=$${vals.length+1}`); vals.push(role); }
+  if (active !== undefined) { fields.push(`active=$${vals.length+1}`); vals.push(!!active); }
+  if (password) { fields.push(`password_hash=$${vals.length+1}`); vals.push(await bcrypt.hash(String(password),12)); }
+  if (!fields.length) return res.status(400).json({ error: 'No hay cambios.' });
+  vals.push(req.params.id);
+  try {
+    const r = await pool.query(
+      `UPDATE users SET ${fields.join(', ')}, updated_at=NOW() WHERE id=$${vals.length}
+       RETURNING id,name,email,role,active,updated_at`,
+      vals
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Usuario no encontrado.' });
+    res.json({ user: r.rows[0] });
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ese correo ya está registrado.' });
+    res.status(500).json({ error: 'No fue posible actualizar el usuario.' });
+  }
+});
+
+app.get('/api/users/:id/permissions', async (req,res) => {
+  if (!req.session.user || req.session.user.role !== 'admin') return res.status(403).json({error:'Acceso denegado.'});
+  const r = await pool.query(
+    'SELECT permission,allowed FROM user_permissions WHERE user_id=$1 ORDER BY permission',
+    [req.params.id]
+  );
+  res.json({permissions:r.rows});
+});
+
+app.put('/api/users/:id/permissions', async (req,res) => {
+  if (!req.session.user || req.session.user.role !== 'admin') return res.status(403).json({error:'Acceso denegado.'});
+  const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const old = await client.query('SELECT permission,allowed FROM user_permissions WHERE user_id=$1',[req.params.id]);
+    const oldMap = Object.fromEntries(old.rows.map(x=>[x.permission,x.allowed]));
+    await client.query('DELETE FROM user_permissions WHERE user_id=$1',[req.params.id]);
+    for (const p of TM_PERMISSIONS) {
+      const allowed = permissions.includes(p);
+      await client.query(
+        `INSERT INTO user_permissions(user_id,permission,allowed)
+         VALUES($1,$2,$3)`,
+        [req.params.id,p,allowed]
+      );
+      if (oldMap[p] !== allowed) {
+        await client.query(
+          `INSERT INTO user_permission_audit(changed_by,user_id,permission,old_allowed,new_allowed)
+           VALUES($1,$2,$3,$4,$5)`,
+          [req.session.user.id,req.params.id,p,oldMap[p] ?? false,allowed]
+        );
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ok:true});
+  } catch(e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({error:'No fue posible guardar los permisos.'});
+  } finally {
+    client.release();
+  }
+});
+
 const port = process.env.PORT || 3000;
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
