@@ -242,25 +242,75 @@ app.post('/api/purchase-orders', async (req, res) => {
     await client.query('BEGIN');
 
     // Reservar consecutivo de OC de forma atómica.
+    // Se toma el mayor valor entre la secuencia y las OCs existentes
+    // para evitar desincronizaciones de consecutivos.
     const ocSeq = await client.query(`
-      INSERT INTO sequences(code,current_value)
-      VALUES('OC',1)
-      ON CONFLICT(code)
-      DO UPDATE SET current_value = sequences.current_value + 1
-      RETURNING current_value
+      SELECT current_value
+      FROM sequences
+      WHERE code='OC'
+      FOR UPDATE
     `);
+
+    const maxOc = await client.query(`
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING(number FROM 4) AS INTEGER)),
+        0
+      ) AS max_number
+      FROM purchase_orders
+      WHERE number ~ '^OC-[0-9]+$'
+    `);
+
+    const nextOc = Math.max(
+      Number(ocSeq.rows[0]?.current_value || 0),
+      Number(maxOc.rows[0]?.max_number || 0)
+    ) + 1;
+
+    await client.query(`
+      INSERT INTO sequences(code,current_value)
+      VALUES('OC',$1)
+      ON CONFLICT(code)
+      DO UPDATE SET current_value=EXCLUDED.current_value
+    `, [nextOc]);
 
     // Reservar consecutivo de operación de forma atómica.
+    // OP puede estar relacionado con ventas u OCs, por lo que
+    // se toma el mayor valor existente en ambas tablas.
     const opSeq = await client.query(`
-      INSERT INTO sequences(code,current_value)
-      VALUES('OP',1)
-      ON CONFLICT(code)
-      DO UPDATE SET current_value = sequences.current_value + 1
-      RETURNING current_value
+      SELECT current_value
+      FROM sequences
+      WHERE code='OP'
+      FOR UPDATE
     `);
 
-    const number = 'OC-' + String(ocSeq.rows[0].current_value).padStart(6, '0');
-    const operationNumber = 'OP-' + String(opSeq.rows[0].current_value).padStart(6, '0');
+    const maxOp = await client.query(`
+      SELECT GREATEST(
+        COALESCE((
+          SELECT MAX(CAST(SUBSTRING(operation_number FROM 4) AS INTEGER))
+          FROM purchase_orders
+          WHERE operation_number ~ '^OP-[0-9]+$'
+        ),0),
+        COALESCE((
+          SELECT MAX(CAST(SUBSTRING(operation_number FROM 4) AS INTEGER))
+          FROM sales
+          WHERE operation_number ~ '^OP-[0-9]+$'
+        ),0)
+      ) AS max_number
+    `);
+
+    const nextOp = Math.max(
+      Number(opSeq.rows[0]?.current_value || 0),
+      Number(maxOp.rows[0]?.max_number || 0)
+    ) + 1;
+
+    await client.query(`
+      INSERT INTO sequences(code,current_value)
+      VALUES('OP',$1)
+      ON CONFLICT(code)
+      DO UPDATE SET current_value=EXCLUDED.current_value
+    `, [nextOp]);
+
+    const number = 'OC-' + String(nextOc).padStart(6, '0');
+    const operationNumber = 'OP-' + String(nextOp).padStart(6, '0');
     const id = d.id || require('crypto').randomUUID();
 
     const r = await client.query(`
