@@ -132,8 +132,148 @@ function orderData(){
  const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0));
  return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
 }
-function createOrder(){const d=orderData();if(!d)return;const o={id:uid(),number:next('OC'),op:next('OP'),paymentStatus:'Pendiente',saleId:null,...d};db.orders.push(o);saveDB();closeModal();alert('OC '+o.number+' creada.')}
-function saveOrder(id){const o=db.orders.find(x=>x.id===id),d=orderData();if(!o||!d)return;Object.assign(o,d);saveDB();closeModal();alert('OC '+o.number+' actualizada.')}
+async function createOrder(){
+ const d=orderData();
+ if(!d)return;
+
+ const btn=document.querySelector('.modal .primary');
+ if(btn){btn.disabled=true;btn.textContent='Guardando...';}
+
+ try{
+   const r=await fetch('/api/purchase-orders',{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify(d)
+   });
+
+   const data=await r.json();
+
+   if(!r.ok){
+     throw new Error(data.error||'No fue posible crear la OC.');
+   }
+
+   const x=data.order;
+
+   const o={
+     id:x.id,
+     number:x.number,
+     op:x.operation_number,
+     clientId:x.client_id,
+     client:d.client,
+     supplierId:x.supplier_id,
+     sellerId:x.seller_id,
+     tourId:x.tour_id,
+     customerName:x.client_name,
+     issueDate:x.issue_date,
+     serviceDate:x.service_date,
+     time:x.service_time||'',
+     place:x.pickup_place||'',
+     pax:Number(x.passengers||0),
+     unitCost:Number(x.unit_cost||0),
+     subtotal:Number(x.subtotal||0),
+     taxRate:Number(x.tax_rate||13),
+     tax:Number(x.tax_amount||0),
+     total:Number(x.total||0),
+     currency:x.currency||'USD',
+     notes:x.notes||'',
+     paymentStatus:x.payment_status||'Pendiente',
+     paymentDate:x.payment_date,
+     paymentReceipt:x.payment_receipt,
+     saleId:x.sale_id,
+     updatedAt:x.updated_at,
+     seller:d.seller,
+     tour:d.tour
+   };
+
+   db.orders.push(o);
+
+   closeModal();
+   alert('OC '+o.number+' creada.');
+
+   view='orders';
+   render();
+
+ }catch(e){
+   if(btn){btn.disabled=false;btn.textContent='Guardar OC';}
+   alert(e.message);
+ }
+}
+
+async function saveOrder(id){
+ const o=db.orders.find(x=>x.id===id);
+ const d=orderData();
+
+ if(!o||!d)return;
+
+ const btn=document.querySelector('.modal .primary');
+ if(btn){btn.disabled=true;btn.textContent='Guardando...';}
+
+ try{
+   const r=await fetch('/api/purchase-orders/'+encodeURIComponent(id),{
+     method:'PUT',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({
+       ...d,
+       updatedAt:o.updatedAt
+     })
+   });
+
+   const data=await r.json();
+
+   if(r.status===409){
+     alert(data.error||'Esta OC fue modificada por otro usuario. Recargue la información antes de guardarla.');
+     return;
+   }
+
+   if(!r.ok){
+     throw new Error(data.error||'No fue posible actualizar la OC.');
+   }
+
+   const x=data.order;
+
+   Object.assign(o,{
+     id:x.id,
+     number:x.number,
+     op:x.operation_number,
+     clientId:x.client_id,
+     client:d.client,
+     supplierId:x.supplier_id,
+     sellerId:x.seller_id,
+     tourId:x.tour_id,
+     customerName:x.client_name,
+     issueDate:x.issue_date,
+     serviceDate:x.service_date,
+     time:x.service_time||'',
+     place:x.pickup_place||'',
+     pax:Number(x.passengers||0),
+     unitCost:Number(x.unit_cost||0),
+     subtotal:Number(x.subtotal||0),
+     taxRate:Number(x.tax_rate||13),
+     tax:Number(x.tax_amount||0),
+     total:Number(x.total||0),
+     currency:x.currency||'USD',
+     notes:x.notes||'',
+     paymentStatus:x.payment_status||o.paymentStatus||'Pendiente',
+     paymentDate:x.payment_date,
+     paymentReceipt:x.payment_receipt,
+     saleId:x.sale_id,
+     updatedAt:x.updated_at,
+     seller:d.seller,
+     tour:d.tour
+   });
+
+   closeModal();
+   alert('OC '+o.number+' actualizada.');
+
+   view='orders';
+   render();
+
+ }catch(e){
+   alert(e.message);
+ }finally{
+   if(btn){btn.disabled=false;btn.textContent='Guardar OC';}
+ }
+}
 
 function company(title){return `<div class="center"><b>${COMPANY.commercial}</b><br>${COMPANY.legal}<br>${COMPANY.phone}<br>${COMPANY.email}<br>${COMPANY.address}<hr><b>${title}</b></div>`}
 function orderDoc(o,ticket=false){const base=company('ORDEN DE COMPRA');return ticket?`<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>IVA 13% ${money(o.tax)}<br><b>TOTAL ${money(o.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>IVA 13%: ${money(o.tax)}<div class="total">TOTAL: ${money(o.total)}</div><p>${esc(o.notes||'')}</p></div>`}
