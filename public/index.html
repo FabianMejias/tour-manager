@@ -27,7 +27,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .notice{background:#fff7ed;border:1px solid #fed7aa;padding:10px;border-radius:8px;color:#9a3412;margin-bottom:12px}
 .report-tabs{display:flex;gap:8px;flex-wrap:wrap}.report{display:none}.report.active{display:block}
 @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.cards,.grid{grid-template-columns:1fr}.full{grid-column:auto}}
-@media print{@page{size:80mm auto;margin:0}html,body{width:80mm;background:#fff}body>*{display:none!important}#printArea{display:block!important;width:80mm}.ticket{width:72mm;margin:auto;padding:3mm 0;font-family:monospace;font-size:11px;line-height:1.25}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:5px 0}.ticket table{border:0}.ticket td{border:0;padding:1px}.right{text-align:right}}
+@media print{@page{size:80mm auto;margin:0}html,body{width:80mm;background:#fff}body>*{display:none!important}#printArea{display:block!important;width:80mm}.ticket{width:76mm;margin:auto;padding:4mm 0;font-family:monospace;font-size:13px;line-height:1.45}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:7px 0}.ticket table{border:0}.ticket td{border:0;padding:2px}.right{text-align:right}.ticket b{font-weight:700}}
 </style>
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
@@ -69,7 +69,7 @@ function next(type){db.seq[type]=(db.seq[type]||0)+1;return type+'-'+String(db.s
 function $(id){return document.getElementById(id)}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function money(v){return '$'+Number(v||0).toFixed(2)}
-function calc(base){base=Number(base||0);return{subtotal:base,tax:base*TAX,total:base*(1+TAX)}}
+function calc(base,applyTax=true){base=Number(base||0);const tax=applyTax?base*TAX:0;return{subtotal:base,tax,total:base+tax}}
 function supplier(id){return db.suppliers.find(x=>x.id===id)?.name||''}
 function seller(id){return db.sellers.find(x=>x.id===id)?.name||''}
 function closeModal(){$('modal').classList.remove('open')}
@@ -119,18 +119,19 @@ function orderForm(id=null){
  <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
  <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"></div>
  <div class="field"><label>Moneda</label><select id="ocCurrency"><option ${o?.currency!=='CRC'?'selected':''}>USD</option><option ${o?.currency==='CRC'?'selected':''}>CRC</option></select></div>
+ <div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="ocTaxApply" type="checkbox" ${o?.taxRate===0?'':'checked'} onchange="orderCalc()"> Aplicar IVA 13%</label></div>
  <div class="field full"><label>Observaciones</label><textarea id="ocNotes">${esc(o?.notes||'')}</textarea></div>
  <div class="card full">Subtotal: <b id="ocSub"></b> · IVA 13%: <b id="ocTax"></b> · TOTAL: <b id="ocTotal"></b></div></div>
  <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="${o?`saveOrder('${id}')`:'createOrder()'}">Guardar OC</button></div>`);
  orderCalc()
 }
 function orderCostFromTour(){const t=db.tours.find(x=>x.id===$('ocTour').value);if(t)$('ocCost').value=t.cost;orderCalc()}
-function orderCalc(){const x=calc((+$('ocPax')?.value||0)*(+$('ocCost')?.value||0));$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
+function orderCalc(){const base=(+$('ocPax')?.value||0)*(+$('ocCost')?.value||0);const x=calc(base,$('ocTaxApply')?.checked!==false);$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
 function orderData(){
  const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
  if(!sellerId)return alert('Debe seleccionar un vendedor.'); if(!passenger||!service)return alert('Complete el nombre del cliente/pasajero y la fecha de servicio.');
- const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0));
- return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
+ const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),applyTax=$('ocTaxApply')?.checked!==false,x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0),applyTax);
+ return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
 }
 async function createOrder(){
  const d=orderData();
@@ -276,7 +277,7 @@ async function saveOrder(id){
 }
 
 function company(title){return `<div class="center"><b>${COMPANY.commercial}</b><br>${COMPANY.legal}<br>${COMPANY.phone}<br>${COMPANY.email}<br>${COMPANY.address}<hr><b>${title}</b></div>`}
-function orderDoc(o,ticket=false){const base=company('ORDEN DE COMPRA');return ticket?`<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>IVA 13% ${money(o.tax)}<br><b>TOTAL ${money(o.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>IVA 13%: ${money(o.tax)}<div class="total">TOTAL: ${money(o.total)}</div><p>${esc(o.notes||'')}</p></div>`}
+function orderDoc(o,ticket=false){const base=company('ORDEN DE COMPRA');return ticket?`<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div><p>${esc(o.notes||'')}</p></div>`}
 function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
 function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(orderDoc(o,true))}
 
@@ -327,7 +328,7 @@ function printPayment(id){const p=db.payments.find(x=>x.id===id);if(!p)return;co
 function sales(){
  const rows=db.sales.slice().sort((a,b)=>b.number.localeCompare(a.number));
  return `<div class="toolbar"><h2>Ventas / facturas internas</h2><small>La venta se genera opcionalmente desde la OC.</small></div>
- <div class="card">${rows.length?`<table><tr><th>Venta</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Servicio</th><th>Total</th><th>Acción</th></tr>${rows.map(s=>`<tr><td>${s.number}</td><td>${s.op}</td><td>${esc(s.customerName)}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${s.serviceDate}</td><td>${money(s.total)}</td><td><button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay ventas. Genere la factura desde una OC.</div>'}</div>`
+ <div class="card">${rows.length?`<table><tr><th>Venta</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Servicio</th><th>Total</th><th>Acción</th></tr>${rows.map(s=>`<tr><td>${s.number}</td><td>${s.op}</td><td>${esc(s.customerName)}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${s.serviceDate}</td><td>${money(s.total)}</td><td><button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button> <button class="secondary" onclick="editSaleForm('${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay ventas. Genere la factura desde una OC.</div>'}</div>`
 }
 function saleForm(orderId){
  const o=db.orders.find(x=>x.id===orderId);if(!o)return;if(o.saleId)return alert('Esta OC ya tiene factura.');
@@ -341,6 +342,41 @@ function createSale(orderId){
  const s={id:uid(),number:next('V'),op:o.op,orderId:o.id,clientId:o.clientId,customerName:o.customerName,tourId:o.tourId,tour:o.tour,sellerId:o.sellerId,seller:o.seller,serviceDate:o.serviceDate,pax:o.pax,unitPrice:price,discount:dp,subtotal,discountAmount:discount,tax:x.tax,total:x.total,currency:o.currency};
  db.sales.push(s);o.saleId=s.id;saveDB();closeModal();alert('Factura '+s.number+' creada.');
 }
+function editSaleForm(id){
+ const s=db.sales.find(x=>x.id===id);
+ if(!s)return;
+ modal('Editar factura '+s.number,`<div class="grid">
+ <div class="field"><label>Cliente</label><input disabled value="${esc(s.customerName)}"></div>
+ <div class="field"><label>Tour</label><input disabled value="${esc(s.tour)}"></div>
+ <div class="field"><label>Precio de venta unitario *</label><input id="saleEditPrice" type="number" step=".01" value="${s.unitPrice||0}"></div>
+ <div class="field"><label>Descuento %</label><input id="saleEditDiscount" type="number" step=".01" value="${s.discount||0}"></div>
+ </div>
+ <div class="card">Subtotal: <b id="saleEditSub"></b> · IVA 13%: <b id="saleEditTax"></b> · TOTAL: <b id="saleEditTotal"></b></div>
+ <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSaleEdit('${id}')">Guardar cambios</button></div>`);
+ saleEditCalc();
+}
+
+function saleEditCalc(){
+ const s=db.sales.find(x=>x.id===$('saleEditPrice')?.dataset?.saleId);
+ const price=+$('saleEditPrice')?.value||0,dp=+$('saleEditDiscount')?.value||0;
+ const order=s?db.orders.find(x=>x.id===s.orderId):null;
+ const pax=order?.pax||s?.pax||1;
+ const subtotal=pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount,true);
+ if($('saleEditSub'))$('saleEditSub').textContent=money(x.subtotal);
+ if($('saleEditTax'))$('saleEditTax').textContent=money(x.tax);
+ if($('saleEditTotal'))$('saleEditTotal').textContent=money(x.total);
+}
+
+async function saveSaleEdit(id){
+ const s=db.sales.find(x=>x.id===id);
+ if(!s)return;
+ const price=+$('saleEditPrice').value||0,dp=+$('saleEditDiscount').value||0;
+ if(price<=0)return alert('Ingrese el precio de venta.');
+ const subtotal=(s.pax||1)*price,discount=subtotal*dp/100,x=calc(subtotal-discount,true);
+ Object.assign(s,{unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:13,tax:x.tax,total:x.total});
+ saveDB();closeModal();alert('Factura '+s.number+' actualizada.');
+}
+
 function saleDoc(s,ticket=false){const base=company('FACTURA INTERNA DE VENTA');return ticket?`<div class="ticket">${base}<b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Servicio:</b> ${s.serviceDate}<hr>Subtotal ${money(s.subtotal)}<br>Descuento -${money(s.discountAmount)}<br>IVA 13% ${money(s.tax)}<br><b>TOTAL ${money(s.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Fecha de servicio:</b> ${s.serviceDate}<br><b>Pasajeros:</b> ${s.pax}</div><hr>Subtotal: ${money(s.subtotal)}<br>Descuento: -${money(s.discountAmount)}<br>IVA 13%: ${money(s.tax)}<div class="total">TOTAL: ${money(s.total)}</div></div>`}
 function previewSale(id){const s=db.sales.find(x=>x.id===id);if(s)preview('Vista previa — '+s.number,saleDoc(s),`printSale('${id}')`)}
 function printSale(id){const s=db.sales.find(x=>x.id===id);if(s)printRaw(saleDoc(s,true))}
@@ -372,14 +408,34 @@ function exportSeller(){const f=$('rSellerFrom').value,t=$('rSellerTo').value,sv
 function exportAnalysis(){const f=$('rAFrom').value,t=$('rATo').value,g=$('rGroup').value,rows=db.orders.filter(o=>(!f||o.serviceDate>=f)&&(!t||o.serviceDate<=t)),map={};rows.forEach(o=>{const k=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;if(!map[k])map[k]={Nombre:k,Servicios:0,Pasajeros:0,VentasSinIVA:0,CostosSinIVA:0};map[k].Servicios++;map[k].Pasajeros+=Number(o.pax||0);map[k].CostosSinIVA+=Number(o.subtotal||0);const s=db.sales.find(x=>x.orderId===o.id);if(s)map[k].VentasSinIVA+=Number(s.subtotal||0)-Number(s.discountAmount||0)});const out=Object.values(map).map(x=>({Nombre:x.Nombre,Servicios:x.Servicios,Pasajeros:x.Pasajeros,VentasSinIVA:x.VentasSinIVA,CostosSinIVA:x.CostosSinIVA,Margen:x.VentasSinIVA-x.CostosSinIVA}));const totals=out.reduce((a,r)=>({Nombre:'TOTAL',Servicios:a.Servicios+r.Servicios,Pasajeros:a.Pasajeros+r.Pasajeros,VentasSinIVA:a.VentasSinIVA+r.VentasSinIVA,CostosSinIVA:a.CostosSinIVA+r.CostosSinIVA,Margen:a.Margen+r.Margen}),{Servicios:0,Pasajeros:0,VentasSinIVA:0,CostosSinIVA:0,Margen:0});toExcel(out,'analisis_tours_proveedores.xlsx',totals)}
 
 function clients(){return listView('Clientes','client',db.clients.map(c=>[c.name,c.type||'',c.phone||'',c.currency||'USD']),['Nombre','Tipo','Teléfono','Moneda'])}
-function suppliers(){return listView('Proveedores','supplier',db.suppliers.map(s=>[s.name,s.contact||'',s.phone||'',s.email||'']),['Proveedor','Contacto','Teléfono','Email'])}
+function suppliers(){return `<div class="toolbar"><h2>Proveedores</h2><button class="primary" onclick="simpleForm('supplier')">+ Nuevo proveedor</button></div><div class="card">${db.suppliers.length?`<table><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Acción</th></tr>${db.suppliers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.contact||'')}</td><td>${esc(s.phone||'')}</td><td>${esc(s.email||'')}</td><td><button class="secondary" onclick="simpleForm('supplier','${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay proveedores.</div>'}</div>`}
 function sellers(){return listView('Vendedores','seller',db.sellers.map(s=>[s.name,s.commissionRate+'%']),['Vendedor','Comisión sobre margen'])}
 function listView(title,type,rows,heads){return `<div class="toolbar"><h2>${title}</h2><button class="primary" onclick="simpleForm('${type}')">+ Nuevo</button></div><div class="card">${rows.length?`<table><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>`:'<div class="empty">No hay registros.</div>'}</div>`}
-function simpleForm(type){
- const title=type==='client'?'Nuevo cliente':type==='supplier'?'Nuevo proveedor':'Nuevo vendedor';
- modal(title,`<div class="grid"><div class="field"><label>Nombre *</label><input id="simpleName"></div>${type==='client'?'<div class="field"><label>Tipo</label><select id="simpleType"><option>Cliente directo</option><option>Hotel</option><option>Agencia</option></select></div>':''}${type==='supplier'?'<div class="field"><label>Contacto</label><input id="simpleContact"></div>':''}<div class="field"><label>Teléfono</label><input id="simplePhone"></div><div class="field"><label>${type==='supplier'?'Email':'Comisión (%)'}</label><input id="simpleExtra" ${type==='supplier'?'type="email"':'type="number" step=".01"'}></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSimple('${type}')">Guardar</button></div>`)
+function simpleForm(type,id=null){
+ const existing=id?(db[type==='supplier'?'suppliers':type==='client'?'clients':'sellers']||[]).find(x=>x.id===id):null;
+ const title=type==='client'?(existing?'Editar cliente':'Nuevo cliente'):type==='supplier'?(existing?'Editar proveedor':'Nuevo proveedor'):(existing?'Editar vendedor':'Nuevo vendedor');
+ modal(title,`<div class="grid"><div class="field"><label>Nombre *</label><input id="simpleName" value="${esc(existing?.name||'')}"></div>${type==='client'?'<div class="field"><label>Tipo</label><select id="simpleType"><option>Cliente directo</option><option>Hotel</option><option>Agencia</option></select></div>':''}${type==='supplier'?`<div class="field"><label>Contacto</label><input id="simpleContact" value="${esc(existing?.contact||'')}"></div>`:''}<div class="field"><label>Teléfono</label><input id="simplePhone" value="${esc(existing?.phone||'')}"></div><div class="field"><label>${type==='supplier'?'Email':'Comisión (%)'}</label><input id="simpleExtra" ${type==='supplier'?'type="email"':'type="number" step=".01"'} value="${type==='supplier'?esc(existing?.email||''):(existing?.commissionRate||0)}"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSimple('${type}','${id||''}')">Guardar</button></div>`)
 }
-function saveSimple(type){const n=$('simpleName').value.trim();if(!n)return alert('Ingrese el nombre.');if(type==='client')db.clients.push({id:uid(),name:n,type:$('simpleType').value,phone:$('simplePhone').value,currency:'USD'});if(type==='supplier')db.suppliers.push({id:uid(),name:n,contact:$('simpleContact').value,phone:$('simplePhone').value,email:$('simpleExtra').value});if(type==='seller')db.sellers.push({id:uid(),name:n,commissionRate:+$('simpleExtra').value||0});saveDB();closeModal()}
+function saveSimple(type,id=''){
+ const n=$('simpleName').value.trim();
+ if(!n)return alert('Ingrese el nombre.');
+ if(type==='supplier'){
+   const item=id?db.suppliers.find(x=>x.id===id):{id:uid()};
+   Object.assign(item,{name:n,contact:$('simpleContact').value.trim(),phone:$('simplePhone').value.trim(),email:$('simpleExtra').value.trim()});
+   if(!id)db.suppliers.push(item);
+ }
+ if(type==='client'){
+   const item=id?db.clients.find(x=>x.id===id):{id:uid()};
+   Object.assign(item,{name:n,type:$('simpleType').value,phone:$('simplePhone').value,currency:item.currency||'USD'});
+   if(!id)db.clients.push(item);
+ }
+ if(type==='seller'){
+   const item=id?db.sellers.find(x=>x.id===id):{id:uid()};
+   Object.assign(item,{name:n,commissionRate:+$('simpleExtra').value||0});
+   if(!id)db.sellers.push(item);
+ }
+ saveDB();closeModal();
+}
 function tours(){return `<div class="toolbar"><h2>Tours y tarifas</h2><button class="primary" onclick="tourForm()">+ Nuevo tour</button></div><div class="card">${db.tours.length?`<table><tr><th>Tour</th><th>Precio hotel</th><th>Costo</th><th>Margen</th><th></th></tr>${db.tours.map(t=>`<tr><td>${esc(t.name)}</td><td>${money(t.hotel)}</td><td>${money(t.cost)}</td><td>${money(t.hotel-t.cost)}</td><td><button class="secondary" onclick="tourForm('${t.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay tours.</div>'}</div>`}
 function tourForm(id=null){const t=id?db.tours.find(x=>x.id===id):null;modal(t?'Editar tour':'Nuevo tour',`<div class="grid"><div class="field"><label>Tour *</label><input id="tourName" value="${esc(t?.name||'')}"></div><div class="field"><label>Precio hotel</label><input id="tourHotel" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Costo</label><input id="tourCost" type="number" step=".01" value="${t?.cost||0}"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveTour('${id||''}')">Guardar</button></div>`)}
 function saveTour(id){const n=$('tourName').value.trim();if(!n)return alert('Ingrese el tour.');const d={name:n,hotel:+$('tourHotel').value||0,cost:+$('tourCost').value||0};if(id)Object.assign(db.tours.find(t=>t.id===id),d);else db.tours.push({id:uid(),...d});saveDB();closeModal()}

@@ -261,7 +261,7 @@ app.post('/api/purchase-orders', async (req, res) => {
     `);
 
     const nextOc = Math.max(
-      Number(ocSeq.rows[0]?.current_value || 0),
+      Math.max(Number(ocSeq.rows[0]?.current_value || 0), 4699),
       Number(maxOc.rows[0]?.max_number || 0)
     ) + 1;
 
@@ -298,7 +298,7 @@ app.post('/api/purchase-orders', async (req, res) => {
     `);
 
     const nextOp = Math.max(
-      Number(opSeq.rows[0]?.current_value || 0),
+      Math.max(Number(opSeq.rows[0]?.current_value || 0), 4699),
       Number(maxOp.rows[0]?.max_number || 0)
     ) + 1;
 
@@ -610,29 +610,209 @@ async function getState(client) {
 async function replaceState(client, db) {
   await client.query('BEGIN');
   try {
-    // Clear dependent data first.
-    await client.query('DELETE FROM payment_purchase_orders');
-    await client.query('DELETE FROM purchase_orders');
-    await client.query('DELETE FROM payments');
-    await client.query('DELETE FROM sales');
-    await client.query('DELETE FROM tours');
-    await client.query('DELETE FROM sellers');
-    await client.query('DELETE FROM suppliers');
-    await client.query('DELETE FROM clients');
+    // IMPORTANTE:
+    // Esta función ya NO elimina registros existentes.
+    // Solo crea o actualiza los registros recibidos.
+    // PostgreSQL queda como fuente permanente de información.
 
-    for (const x of (db.clients||[])) await client.query(`INSERT INTO clients(id,name,type,phone,email,currency,notes,active) VALUES($1,$2,$3,$4,$5,$6,$7,TRUE)`,[x.id,x.name,x.type||null,x.phone||null,x.email||null,x.currency||'USD',x.notes||null]);
-    for (const x of (db.suppliers||[])) await client.query(`INSERT INTO suppliers(id,name,contact,phone,email,notes,active) VALUES($1,$2,$3,$4,$5,$6,TRUE)`,[x.id,x.name,x.contact||null,x.phone||null,x.email||null,x.notes||null]);
-    for (const x of (db.sellers||[])) await client.query(`INSERT INTO sellers(id,name,email,phone,commission_rate,active) VALUES($1,$2,$3,$4,$5,TRUE)`,[x.id,x.name,x.email||null,x.phone||null,Number(x.commissionRate||0)]);
-    for (const x of (db.tours||[])) await client.query(`INSERT INTO tours(id,name,hotel_price,cost,currency,active) VALUES($1,$2,$3,$4,$5,TRUE)`,[x.id,x.name,Number(x.hotel||0),Number(x.cost||0),x.currency||'USD']);
-    // Sales first, then OCs, because OCs may point to a sale.
-    for (const x of (db.sales||[])) await client.query(`INSERT INTO sales(id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,[x.id,x.number,x.op,x.clientId,x.sellerId,x.tourId,x.customerName,x.serviceDate,x.pax||1,Number(x.unitPrice||0),Number(x.subtotal||0),Number(x.discount||0),Number(x.discountAmount||0),Number(x.taxableAmount||((x.subtotal||0)-(x.discountAmount||0))),Number(x.taxRate||13),Number(x.tax||0),Number(x.total||0),x.currency||'USD']);
-    for (const x of (db.orders||[])) await client.query(`INSERT INTO purchase_orders(id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,[x.id,x.number,x.op,x.clientId,x.supplierId,x.sellerId,x.tourId,x.customerName,x.issueDate,x.serviceDate,x.time||null,x.place||null,x.pax||1,Number(x.unitCost||0),Number(x.subtotal||0),Number(x.taxRate||13),Number(x.tax||0),Number(x.total||0),x.currency||'USD',x.notes||null,x.paymentStatus||'Pendiente',x.paymentDate||null,x.paymentReceipt||null,x.saleId||null]);
-    for (const x of (db.payments||[])) await client.query(`INSERT INTO payments(id,number,supplier_id,payment_date,receipt_number,total,notes) VALUES($1,$2,$3,$4,$5,$6,$7)`,[x.id,x.number,x.supplierId,x.date,x.receipt,Number(x.total||0),x.notes||null]);
-    for (const p of (db.payments||[])) for (const oid of (p.orderIds||[])) { const o=(db.orders||[]).find(z=>z.id===oid); if(o) await client.query(`INSERT INTO payment_purchase_orders(payment_id,purchase_order_id,amount) VALUES($1,$2,$3)`,[p.id,oid,Number(o.total||0)]); }
-    for (const [code,val] of Object.entries(db.seq||{})) await client.query(`INSERT INTO sequences(code,current_value) VALUES($1,$2) ON CONFLICT(code) DO UPDATE SET current_value=EXCLUDED.current_value`,[code,Number(val||0)]);
-    if (db.company) await client.query(`UPDATE company_settings SET commercial_name=$1,legal_name=$2,legal_id=$3,phone=$4,whatsapp=$5,email=$6,address=$7,default_tax_rate=$8 WHERE id=1`,[db.company.commercial,db.company.legal,db.company.id,db.company.phone,db.company.whatsapp,db.company.email,db.company.address,Number(db.company.tax||13)]);
+    for (const x of (db.clients || [])) {
+      await client.query(`
+        INSERT INTO clients(id,name,type,phone,email,currency,notes,active)
+        VALUES($1,$2,$3,$4,$5,$6,$7,TRUE)
+        ON CONFLICT(id) DO UPDATE SET
+          name=EXCLUDED.name,
+          type=EXCLUDED.type,
+          phone=EXCLUDED.phone,
+          email=EXCLUDED.email,
+          currency=EXCLUDED.currency,
+          notes=EXCLUDED.notes
+      `,[x.id,x.name,x.type||null,x.phone||null,x.email||null,x.currency||'USD',x.notes||null]);
+    }
+
+    for (const x of (db.suppliers || [])) {
+      await client.query(`
+        INSERT INTO suppliers(id,name,contact,phone,email,notes,active)
+        VALUES($1,$2,$3,$4,$5,$6,TRUE)
+        ON CONFLICT(id) DO UPDATE SET
+          name=EXCLUDED.name,
+          contact=EXCLUDED.contact,
+          phone=EXCLUDED.phone,
+          email=EXCLUDED.email,
+          notes=EXCLUDED.notes
+      `,[x.id,x.name,x.contact||null,x.phone||null,x.email||null,x.notes||null]);
+    }
+
+    for (const x of (db.sellers || [])) {
+      await client.query(`
+        INSERT INTO sellers(id,name,email,phone,commission_rate,active)
+        VALUES($1,$2,$3,$4,$5,TRUE)
+        ON CONFLICT(id) DO UPDATE SET
+          name=EXCLUDED.name,
+          email=EXCLUDED.email,
+          phone=EXCLUDED.phone,
+          commission_rate=EXCLUDED.commission_rate
+      `,[x.id,x.name,x.email||null,x.phone||null,Number(x.commissionRate||0)]);
+    }
+
+    for (const x of (db.tours || [])) {
+      await client.query(`
+        INSERT INTO tours(id,name,hotel_price,cost,currency,active)
+        VALUES($1,$2,$3,$4,$5,TRUE)
+        ON CONFLICT(id) DO UPDATE SET
+          name=EXCLUDED.name,
+          hotel_price=EXCLUDED.hotel_price,
+          cost=EXCLUDED.cost,
+          currency=EXCLUDED.currency
+      `,[x.id,x.name,Number(x.hotel||0),Number(x.cost||0),x.currency||'USD']);
+    }
+
+    for (const x of (db.sales || [])) {
+      await client.query(`
+        INSERT INTO sales(
+          id,number,operation_number,client_id,seller_id,tour_id,client_name,
+          service_date,passengers,unit_price,subtotal,discount_percent,
+          discount_amount,taxable_amount,tax_rate,tax_amount,total,currency
+        )
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        ON CONFLICT(id) DO UPDATE SET
+          client_id=EXCLUDED.client_id,
+          seller_id=EXCLUDED.seller_id,
+          tour_id=EXCLUDED.tour_id,
+          client_name=EXCLUDED.client_name,
+          service_date=EXCLUDED.service_date,
+          passengers=EXCLUDED.passengers,
+          unit_price=EXCLUDED.unit_price,
+          subtotal=EXCLUDED.subtotal,
+          discount_percent=EXCLUDED.discount_percent,
+          discount_amount=EXCLUDED.discount_amount,
+          taxable_amount=EXCLUDED.taxable_amount,
+          tax_rate=EXCLUDED.tax_rate,
+          tax_amount=EXCLUDED.tax_amount,
+          total=EXCLUDED.total,
+          currency=EXCLUDED.currency
+      `,[
+        x.id,x.number,x.op,x.clientId,x.sellerId,x.tourId,x.customerName,
+        x.serviceDate,x.pax||1,Number(x.unitPrice||0),Number(x.subtotal||0),
+        Number(x.discount||0),Number(x.discountAmount||0),
+        Number(x.taxableAmount||((x.subtotal||0)-(x.discountAmount||0))),
+        Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
+        x.currency||'USD'
+      ]);
+    }
+
+    for (const x of (db.orders || [])) {
+      await client.query(`
+        INSERT INTO purchase_orders(
+          id,number,operation_number,client_id,supplier_id,seller_id,tour_id,
+          client_name,issue_date,service_date,service_time,pickup_place,
+          passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,
+          notes,payment_status,payment_date,payment_receipt,sale_id
+        )
+        VALUES(
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+          $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          client_id=EXCLUDED.client_id,
+          supplier_id=EXCLUDED.supplier_id,
+          seller_id=EXCLUDED.seller_id,
+          tour_id=EXCLUDED.tour_id,
+          client_name=EXCLUDED.client_name,
+          issue_date=EXCLUDED.issue_date,
+          service_date=EXCLUDED.service_date,
+          service_time=EXCLUDED.service_time,
+          pickup_place=EXCLUDED.pickup_place,
+          passengers=EXCLUDED.passengers,
+          unit_cost=EXCLUDED.unit_cost,
+          subtotal=EXCLUDED.subtotal,
+          tax_rate=EXCLUDED.tax_rate,
+          tax_amount=EXCLUDED.tax_amount,
+          total=EXCLUDED.total,
+          currency=EXCLUDED.currency,
+          notes=EXCLUDED.notes,
+          payment_status=EXCLUDED.payment_status,
+          payment_date=EXCLUDED.payment_date,
+          payment_receipt=EXCLUDED.payment_receipt,
+          sale_id=EXCLUDED.sale_id
+      `,[
+        x.id,x.number,x.op,x.clientId,x.supplierId,x.sellerId,x.tourId,
+        x.customerName,x.issueDate,x.serviceDate,x.time||null,x.place||null,
+        x.pax||1,Number(x.unitCost||0),Number(x.subtotal||0),
+        Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
+        x.currency||'USD',x.notes||null,x.paymentStatus||'Pendiente',
+        x.paymentDate||null,x.paymentReceipt||null,x.saleId||null
+      ]);
+    }
+
+    for (const x of (db.payments || [])) {
+      await client.query(`
+        INSERT INTO payments(id,number,supplier_id,payment_date,receipt_number,total,notes)
+        VALUES($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(id) DO UPDATE SET
+          supplier_id=EXCLUDED.supplier_id,
+          payment_date=EXCLUDED.payment_date,
+          receipt_number=EXCLUDED.receipt_number,
+          total=EXCLUDED.total,
+          notes=EXCLUDED.notes
+      `,[x.id,x.number,x.supplierId,x.date,x.receipt,Number(x.total||0),x.notes||null]);
+    }
+
+    // Solo se reconstruyen las relaciones de pagos.
+    // Esto NO elimina OCs, pagos ni ningún dato operativo.
+    await client.query('DELETE FROM payment_purchase_orders');
+
+    for (const p of (db.payments || [])) {
+      for (const oid of (p.orderIds || [])) {
+        const o=(db.orders || []).find(z=>z.id===oid);
+        if(o) {
+          await client.query(`
+            INSERT INTO payment_purchase_orders(payment_id,purchase_order_id,amount)
+            VALUES($1,$2,$3)
+          `,[p.id,oid,Number(o.total||0)]);
+        }
+      }
+    }
+
+    // Los consecutivos nunca deben retroceder.
+    for (const [code,val] of Object.entries(db.seq || {})) {
+      await client.query(`
+        INSERT INTO sequences(code,current_value)
+        VALUES($1,$2)
+        ON CONFLICT(code)
+        DO UPDATE SET current_value=GREATEST(sequences.current_value,EXCLUDED.current_value)
+      `,[code,Number(val||0)]);
+    }
+
+    if (db.company) {
+      await client.query(`
+        UPDATE company_settings
+        SET commercial_name=$1,
+            legal_name=$2,
+            legal_id=$3,
+            phone=$4,
+            whatsapp=$5,
+            email=$6,
+            address=$7,
+            default_tax_rate=$8
+        WHERE id=1
+      `,[
+        db.company.commercial,
+        db.company.legal,
+        db.company.id,
+        db.company.phone,
+        db.company.whatsapp,
+        db.company.email,
+        db.company.address,
+        Number(db.company.tax||13)
+      ]);
+    }
+
     await client.query('COMMIT');
-  } catch(e) { await client.query('ROLLBACK'); throw e; }
+
+  } catch(e) {
+    await client.query('ROLLBACK');
+    throw e;
+  }
 }
 
 app.get('/api/state', async (req,res)=>{
