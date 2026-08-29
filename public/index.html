@@ -185,7 +185,7 @@ async function createOrder(){
      pax:Number(x.passengers||0),
      unitCost:Number(x.unit_cost||0),
      subtotal:Number(x.subtotal||0),
-     taxRate:Number(x.tax_rate||13),
+     taxRate:Number(x.tax_rate ?? 0),
      tax:Number(x.tax_amount||0),
      total:Number(x.total||0),
      currency:x.currency||'USD',
@@ -262,7 +262,7 @@ async function saveOrder(id){
      pax:Number(x.passengers||0),
      unitCost:Number(x.unit_cost||0),
      subtotal:Number(x.subtotal||0),
-     taxRate:Number(x.tax_rate||13),
+     taxRate:Number(x.tax_rate ?? 0),
      tax:Number(x.tax_amount||0),
      total:Number(x.total||0),
      currency:x.currency||'USD',
@@ -346,13 +346,14 @@ function sales(){
 function saleForm(orderId){
  const o=db.orders.find(x=>x.id===orderId);if(!o)return;if(o.saleId)return alert('Esta OC ya tiene factura.');
  const t=db.tours.find(x=>x.id===o.tourId);
- modal('Generar factura desde '+o.number,`<div class="grid"><div class="field"><label>Cliente</label><input disabled value="${esc(o.customerName)}"></div><div class="field"><label>Tour</label><input disabled value="${esc(o.tour)}"></div><div class="field"><label>Precio de venta unitario *</label><input id="salePrice" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Descuento %</label><input id="saleDiscount" type="number" step=".01" value="0"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createSale('${orderId}')">Generar factura</button></div>`)
+ modal('Generar factura desde '+o.number,`<div class="grid"><div class="field"><label>Cliente</label><input disabled value="${esc(o.customerName)}"></div><div class="field"><label>Tour</label><input disabled value="${esc(o.tour)}"></div><div class="field"><label>Precio de venta unitario *</label><input id="salePrice" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Descuento %</label><input id="saleDiscount" type="number" step=".01" value="0"></div>
+<div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="saleTaxApply" type="checkbox" checked> Aplicar IVA 13%</label></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createSale('${orderId}')">Generar factura</button></div>`)
 }
 function createSale(orderId){
  const o=db.orders.find(x=>x.id===orderId),price=+$('salePrice').value||0,dp=+$('saleDiscount').value||0;
  if(price<=0)return alert('Ingrese el precio de venta.');
- const subtotal=o.pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount);
- const s={id:uid(),number:next('V'),op:o.op,orderId:o.id,clientId:o.clientId,customerName:o.customerName,tourId:o.tourId,tour:o.tour,sellerId:o.sellerId,seller:o.seller,serviceDate:o.serviceDate,pax:o.pax,unitPrice:price,discount:dp,subtotal,discountAmount:discount,tax:x.tax,total:x.total,currency:o.currency};
+ const subtotal=o.pax*price,discount=subtotal*dp/100,applyTax=$('saleTaxApply')?.checked!==false,x=calc(subtotal-discount,applyTax);
+ const s={id:uid(),number:next('V'),op:o.op,orderId:o.id,clientId:o.clientId,customerName:o.customerName,tourId:o.tourId,tour:o.tour,sellerId:o.sellerId,seller:o.seller,serviceDate:o.serviceDate,pax:o.pax,unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:o.currency};
  db.sales.push(s);o.saleId=s.id;saveDB();closeModal();alert('Factura '+s.number+' creada.');
 }
 function editSaleForm(id){
@@ -361,8 +362,9 @@ function editSaleForm(id){
  modal('Editar factura '+s.number,`<div class="grid">
  <div class="field"><label>Cliente</label><input disabled value="${esc(s.customerName)}"></div>
  <div class="field"><label>Tour</label><input disabled value="${esc(s.tour)}"></div>
- <div class="field"><label>Precio de venta unitario *</label><input id="saleEditPrice" type="number" step=".01" value="${s.unitPrice||0}"></div>
+ <div class="field"><label>Precio de venta unitario *</label><input id="saleEditPrice" data-sale-id="${s.id}" type="number" step=".01" value="${s.unitPrice||0}"></div>
  <div class="field"><label>Descuento %</label><input id="saleEditDiscount" type="number" step=".01" value="${s.discount||0}"></div>
+ <div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="saleEditTaxApply" type="checkbox" ${Number(s.taxRate||0)>0?'checked':''}> Aplicar IVA 13%</label></div>
  </div>
  <div class="card">Subtotal: <b id="saleEditSub"></b> · IVA 13%: <b id="saleEditTax"></b> · TOTAL: <b id="saleEditTotal"></b></div>
  <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSaleEdit('${id}')">Guardar cambios</button></div>`);
@@ -374,7 +376,8 @@ function saleEditCalc(){
  const price=+$('saleEditPrice')?.value||0,dp=+$('saleEditDiscount')?.value||0;
  const order=s?db.orders.find(x=>x.id===s.orderId):null;
  const pax=order?.pax||s?.pax||1;
- const subtotal=pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount,true);
+ const applyTax=$('saleEditTaxApply')?.checked!==false;
+ const subtotal=pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount,applyTax);
  if($('saleEditSub'))$('saleEditSub').textContent=money(x.subtotal);
  if($('saleEditTax'))$('saleEditTax').textContent=money(x.tax);
  if($('saleEditTotal'))$('saleEditTotal').textContent=money(x.total);
@@ -385,12 +388,13 @@ async function saveSaleEdit(id){
  if(!s)return;
  const price=+$('saleEditPrice').value||0,dp=+$('saleEditDiscount').value||0;
  if(price<=0)return alert('Ingrese el precio de venta.');
- const subtotal=(s.pax||1)*price,discount=subtotal*dp/100,x=calc(subtotal-discount,true);
- Object.assign(s,{unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:13,tax:x.tax,total:x.total});
+ const applyTax=$('saleEditTaxApply')?.checked!==false;
+ const subtotal=(s.pax||1)*price,discount=subtotal*dp/100,x=calc(subtotal-discount,applyTax);
+ Object.assign(s,{unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:applyTax?13:0,tax:x.tax,total:x.total});
  saveDB();closeModal();alert('Factura '+s.number+' actualizada.');
 }
 
-function saleDoc(s,ticket=false){const base=company('FACTURA INTERNA DE VENTA');return ticket?`<div class="ticket">${base}<b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Servicio:</b> ${s.serviceDate}<hr>Subtotal ${money(s.subtotal)}<br>Descuento -${money(s.discountAmount)}<br>IVA 13% ${money(s.tax)}<br><b>TOTAL ${money(s.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Fecha de servicio:</b> ${s.serviceDate}<br><b>Pasajeros:</b> ${s.pax}</div><hr>Subtotal: ${money(s.subtotal)}<br>Descuento: -${money(s.discountAmount)}<br>IVA 13%: ${money(s.tax)}<div class="total">TOTAL: ${money(s.total)}</div></div>`}
+function saleDoc(s,ticket=false){const base=company('FACTURA INTERNA DE VENTA');return ticket?`<div class="ticket">${base}<b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Servicio:</b> ${s.serviceDate}<hr>Subtotal ${money(s.subtotal)}<br>Descuento -${money(s.discountAmount)}<br>${Number(s.taxRate||0)>0?'IVA 13% '+money(s.tax):'IVA: No aplica'}<br><b>TOTAL ${money(s.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Fecha de servicio:</b> ${s.serviceDate}<br><b>Pasajeros:</b> ${s.pax}</div><hr>Subtotal: ${money(s.subtotal)}<br>Descuento: -${money(s.discountAmount)}<br>${Number(s.taxRate||0)>0?'IVA 13%: '+money(s.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(s.total)}</div></div>`}
 function previewSale(id){const s=db.sales.find(x=>x.id===id);if(s)preview('Vista previa — '+s.number,saleDoc(s),`printSale('${id}')`)}
 function printSale(id){const s=db.sales.find(x=>x.id===id);if(s)printRaw(saleDoc(s,true))}
 
