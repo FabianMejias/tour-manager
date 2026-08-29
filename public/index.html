@@ -27,7 +27,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .notice{background:#fff7ed;border:1px solid #fed7aa;padding:10px;border-radius:8px;color:#9a3412;margin-bottom:12px}
 .report-tabs{display:flex;gap:8px;flex-wrap:wrap}.report{display:none}.report.active{display:block}
 @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.cards,.grid{grid-template-columns:1fr}.full{grid-column:auto}}
-@media print{@page{size:80mm auto;margin:0}html,body{width:80mm;background:#fff}body>*{display:none!important}#printArea{display:block!important;width:80mm}.ticket{width:76mm;margin:auto;padding:4mm 0;font-family:monospace;font-size:13px;line-height:1.45}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:7px 0}.ticket table{border:0}.ticket td{border:0;padding:2px}.right{text-align:right}.ticket b{font-weight:700}}
+@media print{@page{size:80mm auto;margin:0}html,body{width:80mm;max-width:80mm;margin:0;padding:0;background:#fff;overflow:hidden}body>*{display:none!important}#printArea{display:block!important;width:80mm;max-width:80mm;margin:0;padding:0;overflow:hidden}.ticket{box-sizing:border-box;width:76mm;max-width:76mm;margin:0 auto;padding:4mm 1mm;font-family:monospace;font-size:14px;line-height:1.5;overflow-wrap:break-word;word-break:normal}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:10px 0}.ticket table{width:100%;max-width:100%;border:0;border-collapse:collapse;table-layout:fixed}.ticket td{border:0;padding:4px 2px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere}.right{text-align:right}.ticket b{font-weight:700}.ticket p{margin:0 0 7px}.ticket h1,.ticket h2,.ticket h3{margin-top:0;margin-bottom:8px}.ticket .total{font-size:18px;margin-top:12px}}
 </style>
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
@@ -61,6 +61,19 @@ let TM_AUTH=null;
 function tmCan(p){ return TM_AUTH && (TM_AUTH.user.role==='admin' || TM_AUTH.permissions.includes(p)); }
 const EMPTY={clients:[],tours:[],suppliers:[],sellers:[],orders:[],sales:[],payments:[],seq:{OP:0,OC:0,V:0,P:0}};
 let db=structuredClone(EMPTY),view='dashboard', appReady=false;
+
+function localDate(){
+ const d=new Date();
+ const y=d.getFullYear();
+ const m=String(d.getMonth()+1).padStart(2,'0');
+ const day=String(d.getDate()).padStart(2,'0');
+ return `${y}-${m}-${day}`;
+}
+
+function dateOnly(v){
+ if(!v)return '';
+ return String(v).slice(0,10);
+}
 
 async function loadDB(){const r=await fetch('/api/state');if(!r.ok)throw new Error('No se pudo cargar la base de datos');return await r.json()}
 async function saveDB(){const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(db)});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'No se pudo guardar');}render()}
@@ -112,8 +125,8 @@ function orderForm(id=null){
  <div class="field"><label>Tour</label><select id="ocTour" onchange="orderCostFromTour()">${db.tours.map(t=>`<option value="${t.id}" ${t.id===o?.tourId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Proveedor</label><select id="ocSupplier">${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===o?.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Vendedor *</label><select id="ocSeller"><option value="">Seleccione un vendedor</option>${db.sellers.map(s=>`<option value="${s.id}" ${s.id===o?.sellerId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
- <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${o?.issueDate||new Date().toISOString().slice(0,10)}"></div>
- <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${o?.serviceDate||''}"></div>
+ <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${dateOnly(o?.issueDate)||localDate()}"></div>
+ <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}"></div>
  <div class="field"><label>Hora</label><input id="ocTime" type="time" value="${o?.time||''}"></div>
  <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
  <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
@@ -165,8 +178,8 @@ async function createOrder(){
      sellerId:x.seller_id,
      tourId:x.tour_id,
      customerName:x.client_name,
-     issueDate:x.issue_date,
-     serviceDate:x.service_date,
+     issueDate:dateOnly(x.issue_date),
+     serviceDate:dateOnly(x.service_date),
      time:x.service_time||'',
      place:x.pickup_place||'',
      pax:Number(x.passengers||0),
@@ -242,8 +255,8 @@ async function saveOrder(id){
      sellerId:x.seller_id,
      tourId:x.tour_id,
      customerName:x.client_name,
-     issueDate:x.issue_date,
-     serviceDate:x.service_date,
+     issueDate:dateOnly(x.issue_date),
+     serviceDate:dateOnly(x.service_date),
      time:x.service_time||'',
      place:x.pickup_place||'',
      pax:Number(x.passengers||0),

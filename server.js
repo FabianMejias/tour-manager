@@ -396,6 +396,7 @@ app.post('/api/purchase-orders', async (req, res) => {
 
 
 app.put('/api/purchase-orders/:id', async (req, res) => {
+
   if (!req.session.user)
     return res.status(401).json({ error: 'No autenticado.' });
 
@@ -412,7 +413,43 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
   const client = await pool.connect();
 
   try {
+
     await client.query('BEGIN');
+
+    // Verificar la versión actual dentro de la misma transacción.
+    // Se compara como timestamp para evitar diferencias de representación
+    // entre PostgreSQL y JavaScript.
+    const current = await client.query(`
+      SELECT *
+      FROM purchase_orders
+      WHERE id=$1
+      FOR UPDATE
+    `, [req.params.id]);
+
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'Orden de compra no encontrada.'
+      });
+    }
+
+    const currentOrder = current.rows[0];
+    const currentUpdatedAt = new Date(currentOrder.updated_at).getTime();
+    const receivedUpdatedAt = new Date(d.updatedAt).getTime();
+
+    if (
+      !Number.isFinite(currentUpdatedAt) ||
+      !Number.isFinite(receivedUpdatedAt) ||
+      currentUpdatedAt !== receivedUpdatedAt
+    ) {
+      await client.query('ROLLBACK');
+
+      return res.status(409).json({
+        error: 'Esta OC fue modificada por otro usuario. Recargue la información antes de guardarla.',
+        conflict: true,
+        order: currentOrder
+      });
+    }
 
     const r = await client.query(`
       UPDATE purchase_orders
@@ -433,9 +470,9 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
         tax_amount=$14,
         total=$15,
         currency=$16,
-        notes=$17
+        notes=$17,
+        updated_at=NOW()
       WHERE id=$18
-        AND updated_at=$19
       RETURNING *
     `, [
       d.clientId,
@@ -443,46 +480,29 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
       d.sellerId,
       d.tourId,
       String(d.customerName || '').trim(),
-      d.issueDate,
-      d.serviceDate,
+      d.issueDate || null,
+      d.serviceDate || null,
       d.time || null,
       d.place || null,
       Number(d.pax || 1),
       Number(d.unitCost || 0),
       Number(d.subtotal || 0),
-      Number(d.taxRate || 13),
+      Number(d.taxRate || 0),
       Number(d.tax || 0),
       Number(d.total || 0),
       d.currency || 'USD',
       d.notes || null,
-      req.params.id,
-      d.updatedAt
+      req.params.id
     ]);
-
-    if (!r.rows.length) {
-      await client.query('ROLLBACK');
-
-      const exists = await pool.query(
-        'SELECT id,number,updated_at FROM purchase_orders WHERE id=$1',
-        [req.params.id]
-      );
-
-      if (!exists.rows.length)
-        return res.status(404).json({ error: 'Orden de compra no encontrada.' });
-
-      return res.status(409).json({
-        error: 'Esta OC fue modificada por otro usuario. Recargue la información antes de guardarla.',
-        conflict: true,
-        order: exists.rows[0]
-      });
-    }
 
     await client.query('COMMIT');
 
     res.json({ order: r.rows[0] });
 
   } catch (e) {
+
     await client.query('ROLLBACK');
+
     console.error('Error actualizando OC:', e);
 
     res.status(500).json({
@@ -490,10 +510,12 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
     });
 
   } finally {
-    client.release();
-  }
-});
 
+    client.release();
+
+  }
+
+});
 
 app.delete('/api/purchase-orders/:id', async (req, res) => {
   if (!req.session.user)
