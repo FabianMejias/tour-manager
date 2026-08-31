@@ -29,6 +29,266 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.cards,.grid{grid-template-columns:1fr}.full{grid-column:auto}}
 @media print{@page{size:80mm auto;margin:0}html,body{width:80mm;max-width:80mm;margin:0;padding:0;background:#fff;overflow:hidden}body>*{display:none!important}#printArea{display:block!important;width:80mm;max-width:80mm;margin:0;padding:0;overflow:hidden}.ticket{box-sizing:border-box;width:76mm;max-width:76mm;margin:0 auto;padding:4mm 1mm;font-family:monospace;font-size:14px;line-height:1.5;overflow-wrap:break-word;word-break:normal}.ticket .center{text-align:center}.ticket hr{border:0;border-top:1px dashed #000;margin:10px 0}.ticket table{width:100%;max-width:100%;border:0;border-collapse:collapse;table-layout:fixed}.ticket td{border:0;padding:4px 2px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere}.right{text-align:right}.ticket b{font-weight:700}.ticket p{margin:0 0 7px}.ticket h1,.ticket h2,.ticket h3{margin-top:0;margin-bottom:8px}.ticket .total{font-size:18px;margin-top:12px}}
 </style>
+
+<style id="tm-modern-oc-ui">
+
+/* ==========================================================
+   MODERNIZACIÓN VISUAL — NUEVA / EDITAR OC
+   No modifica IDs, datos ni lógica JavaScript.
+   ========================================================== */
+
+#modal .grid {
+  display:grid !important;
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  gap:18px !important;
+  align-items:start !important;
+}
+
+/* Contenedor principal de la ventana */
+#modal > div,
+.modal {
+  max-width:1280px;
+}
+
+/* Campos */
+#modal .grid .field {
+  min-width:0;
+}
+
+/* Inputs, selects y textarea */
+#modal .grid input,
+#modal .grid select,
+#modal .grid textarea {
+  width:100%;
+  box-sizing:border-box;
+}
+
+/* ==========================================================
+   AGRUPACIÓN VISUAL POR BLOQUES
+   ========================================================== */
+
+/* Cliente / cuenta + pasajero */
+#modal .grid .field:nth-child(1),
+#modal .grid .field:nth-child(2) {
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:14px;
+}
+
+/* Tour / proveedor / vendedor */
+#modal .grid .field:nth-child(3),
+#modal .grid .field:nth-child(4),
+#modal .grid .field:nth-child(5) {
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:14px;
+}
+
+/* Fecha / hora */
+#modal .grid .field:nth-child(6),
+#modal .grid .field:nth-child(7),
+#modal .grid .field:nth-child(8) {
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:14px;
+}
+
+/* Pickup / Drop Off */
+#modal .grid .field:nth-child(9),
+#modal .grid .field:nth-child(10) {
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:14px;
+}
+
+/* Costos */
+#modal .grid .field:nth-child(11),
+#modal .grid .field:nth-child(12),
+#modal .grid .field:nth-child(13) {
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:14px;
+}
+
+/* Observaciones ocupa todo el ancho */
+#modal .grid .field.full,
+#modal .grid textarea {
+  grid-column:1 / -1;
+}
+
+/* ==========================================================
+   ETIQUETAS
+   ========================================================== */
+
+#modal .grid .field label {
+  display:block;
+  margin-bottom:7px;
+  font-weight:600;
+  color:#526784;
+  font-size:14px;
+}
+
+/* ==========================================================
+   INPUTS
+   ========================================================== */
+
+#modal .grid input,
+#modal .grid select,
+#modal .grid textarea {
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  min-height:42px;
+  padding:9px 12px;
+  font-size:15px;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+
+#modal .grid input:focus,
+#modal .grid select:focus,
+#modal .grid textarea:focus {
+  outline:none;
+  border-color:#0f766e;
+  box-shadow:0 0 0 3px rgba(15,118,110,.10);
+}
+
+/* Observaciones */
+#modal .grid textarea {
+  min-height:90px;
+  resize:vertical;
+}
+
+/* ==========================================================
+   HORA
+   ========================================================== */
+
+#modal #ocHour,
+#modal #ocMinute,
+#modal #ocAmPm {
+  min-height:42px;
+}
+
+#modal #ocMinute {
+  width:80px !important;
+}
+
+#modal #ocAmPm {
+  width:95px !important;
+}
+
+/* ==========================================================
+   IVA
+   ========================================================== */
+
+#modal #ocTaxApply {
+  width:20px;
+  height:20px;
+  accent-color:#0f766e;
+  vertical-align:middle;
+}
+
+#modal #ocTaxApply + label {
+  display:inline;
+  margin-left:6px;
+}
+
+/* ==========================================================
+   RESUMEN DE TOTALES
+   ========================================================== */
+
+#modal .oc-summary-modern {
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:0;
+  margin-top:4px;
+  border:1px solid #d7e4df;
+  border-radius:14px;
+  background:linear-gradient(135deg,#f3faf8,#f8fbfa);
+  overflow:hidden;
+}
+
+#modal .oc-summary-modern .oc-total-item {
+  padding:18px;
+  text-align:center;
+  border-right:1px solid #d7e4df;
+}
+
+#modal .oc-summary-modern .oc-total-item:last-child {
+  border-right:0;
+}
+
+#modal .oc-summary-modern small {
+  display:block;
+  color:#64748b;
+  font-size:13px;
+  margin-bottom:5px;
+}
+
+#modal .oc-summary-modern strong {
+  display:block;
+  font-size:21px;
+  color:#17324d;
+}
+
+#modal .oc-summary-modern .oc-grand-total strong {
+  font-size:27px;
+  color:#0f766e;
+}
+
+/* ==========================================================
+   BOTONES
+   ========================================================== */
+
+#modal button {
+  border-radius:10px;
+}
+
+#modal button.primary {
+  background:#0f766e;
+  border-color:#0f766e;
+}
+
+#modal button.primary:hover {
+  filter:brightness(.95);
+}
+
+/* ==========================================================
+   RESPONSIVE
+   ========================================================== */
+
+@media (max-width:900px) {
+
+  #modal .grid {
+    grid-template-columns:1fr !important;
+  }
+
+  #modal .grid .field.full,
+  #modal .oc-summary-modern {
+    grid-column:1;
+  }
+
+  #modal .oc-summary-modern {
+    grid-template-columns:1fr;
+  }
+
+  #modal .oc-summary-modern .oc-total-item {
+    border-right:0;
+    border-bottom:1px solid #d7e4df;
+  }
+
+  #modal .oc-summary-modern .oc-total-item:last-child {
+    border-bottom:0;
+  }
+}
+
+</style>
+
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
