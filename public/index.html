@@ -454,11 +454,116 @@ function sales(){
  <div class="card">${rows.length?`<table><tr><th>Venta</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Servicio</th><th>Total</th><th>Acción</th></tr>${rows.map(s=>`<tr><td>${s.number}</td><td>${s.op}</td><td>${esc(s.customerName)}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${s.serviceDate}</td><td>${money(s.total)}</td><td><button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button> <button class="secondary" onclick="editSaleForm('${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay ventas. Genere la factura desde una OC.</div>'}</div>`
 }
 function saleForm(orderId){
- const o=db.orders.find(x=>x.id===orderId);if(!o)return;if(o.saleId)return alert('Esta OC ya tiene factura.');
+
+ window.__currentSaleOrderId=orderId;
+
+ const o=db.orders.find(x=>x.id===orderId);
+ if(!o)return;
+ if(o.saleId)return alert('Esta OC ya tiene factura.');
+
  const t=db.tours.find(x=>x.id===o.tourId);
- modal('Generar factura desde '+o.number,`<div class="grid"><div class="field"><label>Cliente</label><input disabled value="${esc(o.customerName)}"></div><div class="field"><label>Tour</label><input disabled value="${esc(o.tour)}"></div><div class="field"><label>Precio de venta unitario *</label><input id="salePrice" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Descuento %</label><input id="saleDiscount" type="number" step=".01" value="0"></div>
-<div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="saleTaxApply" type="checkbox" checked> Aplicar IVA 13%</label></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createSale('${orderId}')">Generar factura</button></div>`)
+
+ modal('Generar factura desde '+o.number,`
+ <div class="grid">
+
+   <div class="field">
+     <label>Cliente</label>
+     <input disabled value="${esc(o.customerName)}">
+   </div>
+
+   <div class="field">
+     <label>Tour</label>
+     <input disabled value="${esc(o.tour)}">
+   </div>
+
+   <div class="field">
+     <label>Precio de venta unitario *</label>
+     <input id="salePrice"
+            type="number"
+            step=".01"
+            min="0"
+            value="${t?.hotel||0}"
+            oninput="saleCalc()">
+   </div>
+
+   <div class="field">
+     <label>Descuento %</label>
+     <input id="saleDiscount"
+            type="number"
+            step=".01"
+            min="0"
+            value="0"
+            oninput="saleCalc()">
+   </div>
+
+   <div class="field">
+     <label style="display:flex;align-items:center;gap:8px;margin-top:28px">
+       <input id="saleTaxApply"
+              type="checkbox"
+              checked
+              onchange="saleCalc()">
+       Aplicar IVA 13%
+     </label>
+   </div>
+
+ </div>
+
+ <div class="card" style="margin-top:16px">
+   <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap">
+     <div>
+       <small>Subtotal</small>
+       <div id="saleSub" style="font-size:20px;font-weight:600">$0.00</div>
+     </div>
+
+     <div>
+       <small>Descuento</small>
+       <div id="saleDiscountAmount" style="font-size:20px;font-weight:600">$0.00</div>
+     </div>
+
+     <div>
+       <small>IVA 13%</small>
+       <div id="saleTax" style="font-size:20px;font-weight:600">$0.00</div>
+     </div>
+
+     <div>
+       <small>TOTAL</small>
+       <div id="saleTotal" style="font-size:26px;font-weight:700">$0.00</div>
+     </div>
+   </div>
+ </div>
+
+ <div class="actions">
+   <button class="secondary" onclick="closeModal()">Cancelar</button>
+   <button class="primary" onclick="createSale('${orderId}')">Generar factura</button>
+ </div>
+ `);
+
+ saleCalc();
 }
+
+function saleCalc(){
+
+ const o=db.orders.find(x=>x.id===document.querySelector('#salePrice')?.closest('.modal')?.dataset?.orderId)
+       ||db.orders.find(x=>x.id===window.__saleOrderId);
+
+ const price=+$('salePrice')?.value||0;
+ const dp=+$('saleDiscount')?.value||0;
+
+ const order=o||db.orders.find(x=>x.id===window.__currentSaleOrderId);
+
+ const pax=order?.pax||1;
+ const subtotal=pax*price;
+ const discount=subtotal*dp/100;
+ const applyTax=$('saleTaxApply')?.checked!==false;
+
+ const x=calc(subtotal-discount,applyTax);
+
+ if($('saleSub'))$('saleSub').textContent=money(subtotal);
+ if($('saleDiscountAmount'))$('saleDiscountAmount').textContent='-'+money(discount);
+ if($('saleTax'))$('saleTax').textContent=applyTax?money(x.tax):'No aplica';
+ if($('saleTotal'))$('saleTotal').textContent=money(x.total);
+}
+
 function createSale(orderId){
  const o=db.orders.find(x=>x.id===orderId),price=+$('salePrice').value||0,dp=+$('saleDiscount').value||0;
  if(price<=0)return alert('Ingrese el precio de venta.');
