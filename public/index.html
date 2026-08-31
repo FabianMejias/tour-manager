@@ -1261,19 +1261,621 @@ function orderDoc(o,ticket=false){
 function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
 function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(orderDoc(o,true))}
 
+
 function payments(){
- return `<div class="toolbar"><h2>Pagos a proveedores</h2></div>
- <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select id="paySupplier" onchange="renderPayments()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar OC / operación / cliente</label><input id="paySearch" placeholder="OC-000001" oninput="renderPayments()"></div><button class="secondary" onclick="paySelectAll()">Seleccionar todos</button><button class="secondary" onclick="payClear()">Limpiar</button></div><div id="pendingPayments"></div><div class="actions"><button class="primary" onclick="payOpenForm()">Aplicar pago</button></div></div>
- <div class="card"><h3>Historial de pagos</h3><div class="filters"><div class="field"><label>Proveedor</label><select id="historySupplier"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar pago / OC / comprobante</label><input id="historySearch" placeholder="P-000001 o TRX-123"></div></div><div id="paymentHistory"></div></div>`
+
+ return `<div class="toolbar">
+   <div>
+     <h2>Pagos a proveedores</h2>
+     <small>Cuentas por pagar según la fecha en que se recibió el servicio.</small>
+   </div>
+ </div>
+
+ <div class="card">
+
+   <div class="filters">
+
+     <div class="field">
+       <label>Fecha de servicio desde</label>
+       <input id="payDateFrom" type="date" onchange="renderPayments()">
+     </div>
+
+     <div class="field">
+       <label>Fecha de servicio hasta</label>
+       <input id="payDateTo" type="date" onchange="renderPayments()">
+     </div>
+
+     <div class="field">
+       <label>Proveedor</label>
+       <select id="paySupplier" onchange="renderPayments()">
+         <option value="">Todos los proveedores</option>
+         ${db.suppliers.map(s=>`
+           <option value="${s.id}">
+             ${esc(s.name)}
+           </option>
+         `).join('')}
+       </select>
+     </div>
+
+     <div class="field">
+       <label>Buscar OC / operación / cliente</label>
+       <input
+         id="paySearch"
+         placeholder="OC, operación o cliente"
+         oninput="renderPayments()">
+     </div>
+
+   </div>
+
+   <div id="pendingPayments"></div>
+
+   <div class="actions">
+     <button class="secondary" onclick="paySelectAll()">
+       Seleccionar todos
+     </button>
+
+     <button class="secondary" onclick="payClear()">
+       Limpiar selección
+     </button>
+
+     <button class="primary" onclick="payOpenForm()">
+       Aplicar pago
+     </button>
+   </div>
+
+ </div>
+
+ <div class="card">
+
+   <h3>Historial de pagos</h3>
+
+   <div class="filters">
+
+     <div class="field">
+       <label>Proveedor</label>
+       <select id="historySupplier" onchange="renderPayments()">
+         <option value="">Todos</option>
+         ${db.suppliers.map(s=>`
+           <option value="${s.id}">
+             ${esc(s.name)}
+           </option>
+         `).join('')}
+       </select>
+     </div>
+
+     <div class="field">
+       <label>Buscar pago / OC / comprobante</label>
+       <input
+         id="historySearch"
+         placeholder="Pago, OC o comprobante"
+         oninput="renderPayments()">
+     </div>
+
+   </div>
+
+   <div id="paymentHistory"></div>
+
+ </div>`
 }
+
+
 function renderPayments(){
- const sf=$('paySupplier').value,q=$('paySearch').value.trim().toLowerCase();
- const rows=db.orders.filter(o=>o.paymentStatus!=='Pagado'&&(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
- $('pendingPayments').innerHTML=rows.length?`<table><tr><th><input id="payAll" type="checkbox" onchange="paySelectAll(this.checked)"></th><th>OC</th><th>Proveedor</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th><th></th></tr>${rows.map(o=>`<tr><td><input class="payItem" type="checkbox" value="${o.id}"></td><td>${o.number}</td><td>${esc(supplier(o.supplierId))}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${o.serviceDate}</td><td>${money(o.total)}</td><td><button class="secondary" onclick="previewOrder('${o.id}')">Ver OC</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay OCs pendientes con esos filtros.</div>';
- const hf=$('historySupplier').value,hq=$('historySearch').value.trim().toLowerCase();
- const ps=db.payments.filter(p=>(!hf||p.supplierId===hf)&&(!hq||[p.number,p.receipt,supplier(p.supplierId),...(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)?.number||'')].join(' ').toLowerCase().includes(hq))).slice().reverse();
- $('paymentHistory').innerHTML=ps.length?`<table><tr><th>Pago</th><th>Proveedor</th><th>Fecha</th><th>Comprobante</th><th>Total</th><th>OCs</th><th>Acción</th></tr>${ps.map(p=>`<tr><td>${p.number}</td><td>${esc(supplier(p.supplierId))}</td><td>${p.date}</td><td>${esc(p.receipt)}</td><td>${money(p.total)}</td><td>${(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)?.number||'').join(', ')}</td><td><button class="secondary" onclick="previewPayment('${p.id}')">Vista previa</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay pagos registrados.</div>';
+
+ const sf=$('paySupplier')?.value||'';
+ const q=($('paySearch')?.value||'').trim().toLowerCase();
+
+ const from=$('payDateFrom')?.value||'';
+ const to=$('payDateTo')?.value||'';
+
+ /*
+  * ==========================================================
+  * CxP
+  *
+  * IMPORTANTE:
+  * El filtro utiliza serviceDate.
+  * NO utiliza fecha de creación de la OC.
+  * NO utiliza fecha de pago.
+  * ==========================================================
+  */
+
+ if(from && to && from>to){
+
+   $('pendingPayments').innerHTML=`
+     <div class="notice">
+       <b>Rango de fechas inválido.</b><br>
+       La fecha desde no puede ser posterior a la fecha hasta.
+     </div>
+   `;
+
+ } else {
+
+   const rows=db.orders
+     .filter(o=>{
+
+       // Solo pendientes
+       if(o.paymentStatus==='Pagado')return false;
+
+       // Filtro proveedor
+       if(sf && o.supplierId!==sf)return false;
+
+       // Fecha real del servicio
+       const service=String(
+         dateOnly(o.serviceDate)||''
+       ).slice(0,10);
+
+       if(from && service<from)return false;
+       if(to && service>to)return false;
+
+       // Búsqueda
+       if(q){
+
+         const text=[
+           o.number,
+           o.op,
+           o.customerName,
+           o.tour,
+           supplier(o.supplierId)
+         ]
+         .join(' ')
+         .toLowerCase();
+
+         if(!text.includes(q))return false;
+       }
+
+       return true;
+
+     })
+     .sort((a,b)=>{
+
+       const da=String(
+         dateOnly(a.serviceDate)||''
+       );
+
+       const dbb=String(
+         dateOnly(b.serviceDate)||''
+       );
+
+       return da.localeCompare(dbb)
+         || a.number.localeCompare(b.number);
+
+     });
+
+
+   /*
+    * Agrupar por proveedor
+    */
+
+   const supplierGroups={};
+
+   rows.forEach(o=>{
+
+     const sid=o.supplierId||'sin-proveedor';
+
+     if(!supplierGroups[sid]){
+
+       supplierGroups[sid]={
+         supplierId:o.supplierId,
+         name:supplier(o.supplierId),
+         orders:[],
+         total:0
+       };
+
+     }
+
+     supplierGroups[sid].orders.push(o);
+
+     supplierGroups[sid].total+=Number(
+       o.total||0
+     );
+
+   });
+
+
+   const groups=Object.values(
+     supplierGroups
+   );
+
+   const grandTotal=rows.reduce(
+     (a,o)=>a+Number(o.total||0),
+     0
+   );
+
+
+   /*
+    * Resumen CxP
+    */
+
+   const summary=`
+
+     <div style="
+       display:grid;
+       grid-template-columns:
+         repeat(3,minmax(0,1fr));
+       gap:12px;
+       margin-bottom:18px;
+     ">
+
+       <div style="
+         padding:16px;
+         border:1px solid #e2e8ee;
+         border-radius:14px;
+         background:#f8fafc;
+       ">
+         <small style="color:#64748b">
+           Proveedores
+         </small>
+
+         <div style="
+           font-size:24px;
+           font-weight:700;
+           margin-top:5px;
+         ">
+           ${groups.length}
+         </div>
+       </div>
+
+
+       <div style="
+         padding:16px;
+         border:1px solid #e2e8ee;
+         border-radius:14px;
+         background:#f8fafc;
+       ">
+         <small style="color:#64748b">
+           Servicios pendientes
+         </small>
+
+         <div style="
+           font-size:24px;
+           font-weight:700;
+           margin-top:5px;
+         ">
+           ${rows.length}
+         </div>
+       </div>
+
+
+       <div style="
+         padding:16px;
+         border:1px solid #e2e8ee;
+         border-radius:14px;
+         background:#f8fafc;
+       ">
+         <small style="color:#64748b">
+           Total CxP
+         </small>
+
+         <div style="
+           font-size:24px;
+           font-weight:700;
+           margin-top:5px;
+         ">
+           ${money(grandTotal)}
+         </div>
+       </div>
+
+     </div>
+
+   `;
+
+
+   const rangeText=
+     from||to
+
+       ? `<div style="
+            margin-bottom:14px;
+            color:#64748b;
+            font-size:13px;
+          ">
+            Servicios desde
+            <b>
+              ${from
+                ? displayServiceDate(from)
+                : 'el inicio'}
+            </b>
+            hasta
+            <b>
+              ${to
+                ? displayServiceDate(to)
+                : 'el final'}
+            </b>
+          </div>`
+
+       : `<div style="
+            margin-bottom:14px;
+            color:#64748b;
+            font-size:13px;
+          ">
+            Mostrando todas las OCs pendientes de pago.
+          </div>`;
+
+
+   /*
+    * Proveedores
+    */
+
+   const groupedHtml=groups.map(g=>`
+
+     <div style="
+       border:1px solid #e2e8ee;
+       border-radius:15px;
+       overflow:hidden;
+       margin-bottom:16px;
+       background:#fff;
+     ">
+
+       <div style="
+         display:flex;
+         justify-content:space-between;
+         align-items:center;
+         gap:15px;
+         padding:15px 18px;
+         background:#f8fafc;
+         border-bottom:1px solid #e2e8ee;
+       ">
+
+         <div>
+
+           <strong style="font-size:16px">
+             ${esc(g.name)}
+           </strong>
+
+           <div style="
+             font-size:12px;
+             color:#64748b;
+             margin-top:3px;
+           ">
+             ${g.orders.length}
+             servicio(s) pendiente(s)
+           </div>
+
+         </div>
+
+         <strong style="font-size:18px">
+           ${money(g.total)}
+         </strong>
+
+       </div>
+
+
+       <div style="overflow-x:auto">
+
+         <table style="margin:0">
+
+           <tr>
+
+             <th>
+               <input
+                 type="checkbox"
+                 onchange="
+                   document
+                     .querySelectorAll(
+                       '.payGroup-${esc(g.supplierId||'none')}'
+                     )
+                     .forEach(x=>x.checked=this.checked)
+                 ">
+             </th>
+
+             <th>OC</th>
+             <th>Cliente</th>
+             <th>Tour</th>
+             <th>Fecha servicio</th>
+             <th>Total</th>
+             <th></th>
+
+           </tr>
+
+
+           ${g.orders.map(o=>`
+
+             <tr>
+
+               <td>
+
+                 <input
+                   class="payItem payGroup-${esc(g.supplierId||'none')}"
+                   type="checkbox"
+                   value="${o.id}">
+
+               </td>
+
+
+               <td>
+                 <b>${o.number}</b>
+               </td>
+
+
+               <td>
+                 ${esc(o.customerName)}
+               </td>
+
+
+               <td>
+                 ${esc(o.tour)}
+               </td>
+
+
+               <td>
+
+                 ${displayServiceDate(o.serviceDate)}
+
+                 ${
+                   o.time
+                     ? `<br>
+                        <small>
+                          ${formatServiceTime(o.time)}
+                        </small>`
+                     : ''
+                 }
+
+               </td>
+
+
+               <td>
+                 <b>${money(o.total)}</b>
+               </td>
+
+
+               <td>
+
+                 <button
+                   class="secondary"
+                   onclick="previewOrder('${o.id}')">
+                   Ver OC
+                 </button>
+
+               </td>
+
+             </tr>
+
+           `).join('')}
+
+         </table>
+
+       </div>
+
+     </div>
+
+   `).join('');
+
+
+   $('pendingPayments').innerHTML=rows.length
+
+     ? summary+rangeText+groupedHtml
+
+     : `<div class="empty">
+
+          ${summary}
+
+          <b>
+            No hay OCs pendientes de pago
+            con estos filtros.
+          </b>
+
+        </div>`;
+
+ }
+
+
+ /*
+  * ==========================================================
+  * HISTORIAL
+  *
+  * NO se modifica la estructura de los pagos.
+  * Se mantiene Vista previa.
+  * ==========================================================
+  */
+
+ const hf=$('historySupplier')?.value||'';
+
+ const hq=(
+   $('historySearch')?.value||''
+ )
+ .trim()
+ .toLowerCase();
+
+
+ const ps=db.payments
+   .filter(p=>
+
+     (!hf||p.supplierId===hf)
+
+     &&
+
+     (
+       !hq
+       ||
+       [
+         p.number,
+         p.receipt,
+         supplier(p.supplierId),
+
+         ...(p.orderIds||[])
+           .map(
+             i=>db.orders.find(
+               o=>o.id===i
+             )?.number||''
+           )
+
+       ]
+       .join(' ')
+       .toLowerCase()
+       .includes(hq)
+     )
+
+   )
+   .slice()
+   .reverse();
+
+
+ $('paymentHistory').innerHTML=ps.length
+
+   ? `<table>
+
+       <tr>
+         <th>Pago</th>
+         <th>Proveedor</th>
+         <th>Fecha</th>
+         <th>Comprobante</th>
+         <th>Total</th>
+         <th>OCs</th>
+         <th>Acción</th>
+       </tr>
+
+       ${ps.map(p=>`
+
+         <tr>
+
+           <td>${p.number}</td>
+
+           <td>
+             ${esc(
+               supplier(p.supplierId)
+             )}
+           </td>
+
+           <td>
+             ${displayServiceDate(p.date)}
+           </td>
+
+           <td>
+             ${esc(p.receipt)}
+           </td>
+
+           <td>
+             ${money(p.total)}
+           </td>
+
+           <td>
+             ${(p.orderIds||[])
+               .map(
+                 i=>db.orders.find(
+                   o=>o.id===i
+                 )?.number||''
+               )
+               .join(', ')}
+           </td>
+
+           <td>
+
+             <button
+               class="secondary"
+               onclick="previewPayment('${p.id}')">
+               Vista previa
+             </button>
+
+           </td>
+
+         </tr>
+
+       `).join('')}
+
+     </table>`
+
+   : '<div class="empty">No hay pagos registrados.</div>';
+
 }
+
 function paySelectAll(force){const items=document.querySelectorAll('.payItem');items.forEach(x=>x.checked=force===undefined?true:force)}
 function payClear(){document.querySelectorAll('.payItem').forEach(x=>x.checked=false);if($('payAll'))$('payAll').checked=false}
 function selectedOrders(){return [...document.querySelectorAll('.payItem:checked')].map(x=>db.orders.find(o=>o.id===x.value)).filter(Boolean)}
