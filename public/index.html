@@ -105,7 +105,7 @@ function dashboard(){
  <div class="card">Ventas sin IVA<div class="metric">${money(rev)}</div></div><div class="card">Costos sin IVA<div class="metric">${money(cost)}</div></div>
  <div class="card">Margen<div class="metric">${money(rev-cost)}</div></div><div class="card">OCs pendientes<div class="metric">${db.orders.filter(o=>o.paymentStatus!=='Pagado').length}</div></div>
  <div class="card">Ventas<div class="metric">${db.sales.length}</div></div></div>
- <div class="card"><h3>Últimas órdenes</h3>${db.orders.length?`<table><tr><th>OC</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th></tr>${db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).slice(0,10).map(o=>`<tr><td>${o.number}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${o.serviceDate}</td><td>${money(o.total)}</td></tr>`).join('')}</table>`:'<div class="empty">No hay operaciones.</div>'}</div>`
+ <div class="card"><h3>Últimas órdenes</h3>${db.orders.length?`<table><tr><th>OC</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th></tr>${db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).slice(0,10).map(o=>`<tr><td>${o.number}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${displayServiceDate(o.serviceDate)}</td><td>${money(o.total)}</td></tr>`).join('')}</table>`:'<div class="empty">No hay operaciones.</div>'}</div>`
 }
 
 function orders(){
@@ -113,7 +113,96 @@ function orders(){
  const rows=db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).filter(o=>(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
  return `<div class="toolbar"><div><h2>Órdenes de compra</h2><small>La OC se genera primero. La factura se crea opcionalmente desde la OC.</small></div><button class="primary" onclick="orderForm()">+ Nueva OC</button></div>
  <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select onchange="window.orderSupplier=this.value;render()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}" ${sf===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar</label><input value="${esc(window.orderQ||'')}" oninput="window.orderQ=this.value;render()" placeholder="OC, cliente, tour..."></div></div></div>
- <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${o.serviceDate}<br>${o.time||''}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
+ <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${displayServiceDate(o.serviceDate)}<br>${formatServiceTime(o.time)}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
+}
+
+
+function displayServiceDate(value){
+ const raw=String(value||'').trim();
+ if(!raw)return '-';
+
+ const m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+ if(m)return `${m[3]}/${m[2]}/${m[1]}`;
+
+ const d=new Date(raw);
+ if(!Number.isNaN(d.getTime())){
+   return String(d.getDate()).padStart(2,'0')+'/'+
+          String(d.getMonth()+1).padStart(2,'0')+'/'+
+          d.getFullYear();
+ }
+
+ return raw;
+}
+
+function formatServiceTime(value){
+ const raw=String(value||'').trim();
+ if(!raw)return '-';
+
+ const m=raw.match(/^(\d{1,2}):(\d{2})/);
+ if(!m)return raw;
+
+ let h=Number(m[1]);
+ const min=m[2];
+
+ if(Number.isNaN(h))return raw;
+
+ const ampm=h>=12?'PM':'AM';
+ h=h%12;
+ if(h===0)h=12;
+
+ return String(h).padStart(2,'0')+':'+min+' '+ampm;
+}
+
+function timeParts(value){
+ const raw=String(value||'').trim();
+ const m=raw.match(/^(\d{1,2}):(\d{2})/);
+
+ if(!m){
+   return {hour:'',minute:'',ampm:'AM'};
+ }
+
+ let h=Number(m[1]);
+ const minute=m[2];
+
+ if(h>=12){
+   return {
+     hour:String(h===12?12:h-12).padStart(2,'0'),
+     minute,
+     ampm:'PM'
+   };
+ }
+
+ return {
+   hour:String(h===0?12:h).padStart(2,'0'),
+   minute,
+   ampm:'AM'
+ };
+}
+
+
+function normalizeOcTime(){
+ const el=$('ocMinute');
+ if(!el)return;
+
+ let n=Number(el.value||0);
+
+ if(Number.isNaN(n))n=0;
+ n=Math.max(0,Math.min(59,Math.round(n)));
+
+ el.value=String(n).padStart(2,'0');
+}
+
+function timeTo24(){
+ const h=Number($('ocHour')?.value||0);
+ normalizeOcTime(); const minute=String($('ocMinute')?.value||'00').padStart(2,'0');
+ const ampm=$('ocAmPm')?.value||'AM';
+
+ if(!h)return '';
+
+ let hour=h%12;
+ if(ampm==='PM')hour+=12;
+
+ return String(hour).padStart(2,'0')+':'+minute;
 }
 
 function orderForm(id=null){
@@ -127,7 +216,20 @@ function orderForm(id=null){
  <div class="field"><label>Vendedor *</label><select id="ocSeller"><option value="">Seleccione un vendedor</option>${db.sellers.map(s=>`<option value="${s.id}" ${s.id===o?.sellerId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${dateOnly(o?.issueDate)||localDate()}"></div>
  <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}"></div>
- <div class="field"><label>Hora</label><input id="ocTime" type="time" value="${o?.time||''}"></div>
+ <div class="field">
+<label>Hora del servicio / Pickup</label>
+<div style="display:flex;gap:8px;align-items:center">
+ <select id="ocHour" style="flex:1">
+  ${(()=>{const tp=timeParts(o?.time||'');return Array.from({length:12},(_,i)=>{const h=String(i+1).padStart(2,'0');return `<option value="${h}" ${tp.hour===h?'selected':''}>${h}</option>`}).join('')})()}
+ </select>
+ <span>:</span>
+ <input id="ocMinute" type="number" min="0" max="59" step="1" style="width:90px" value="${timeParts(o?.time||'').minute||'00'}" placeholder="00">
+ <select id="ocAmPm" style="width:100px">
+  <option value="AM" ${timeParts(o?.time||'').ampm==='AM'?'selected':''}>AM</option>
+  <option value="PM" ${timeParts(o?.time||'').ampm==='PM'?'selected':''}>PM</option>
+ </select>
+</div>
+</div>
  <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
  <div class="field"><label>Drop Off</label><input id="ocDropOff" value="${esc(o?.dropOff||'')}"></div>
  <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
@@ -145,7 +247,7 @@ function orderData(){
  const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
  if(!sellerId)return alert('Debe seleccionar un vendedor.'); if(!passenger||!service)return alert('Complete el nombre del cliente/pasajero y la fecha de servicio.');
  const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),applyTax=$('ocTaxApply')?.checked!==false,x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0),applyTax);
- return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,dropOff:$('ocDropOff').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
+ return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:timeTo24(),place:$('ocPlace').value,dropOff:$('ocDropOff').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
 }
 async function createOrder(){
  const d=orderData();
@@ -295,8 +397,8 @@ function orderDoc(o,ticket=false){
  const base=company('ORDEN DE COMPRA');
  const notes=o.notes?.trim()||'';
  return ticket
- ? `<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b>${notes?`<hr><b>Observaciones:</b><br>${esc(notes)}`:''}</div>`
- : `<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div>${notes?`<p><b>Observaciones:</b><br>${esc(notes)}</p>`:''}</div>`
+ ? `<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${displayServiceDate(o.serviceDate)} ${formatServiceTime(o.time)}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b>${notes?`<hr><b>Observaciones:</b><br>${esc(notes)}`:''}</div>`
+ : `<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${displayServiceDate(o.serviceDate)}<br><b>Hora:</b> ${formatServiceTime(o.time)}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div>${notes?`<p><b>Observaciones:</b><br>${esc(notes)}</p>`:''}</div>`
 }
 
 function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
@@ -304,7 +406,7 @@ function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(order
 
 function payments(){
  return `<div class="toolbar"><h2>Pagos a proveedores</h2></div>
- <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select id="paySupplier"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar OC / operación / cliente</label><input id="paySearch" placeholder="OC-000001"></div><button class="secondary" onclick="paySelectAll()">Seleccionar todos</button><button class="secondary" onclick="payClear()">Limpiar</button></div><div id="pendingPayments"></div><div class="actions"><button class="primary" onclick="payOpenForm()">Aplicar pago</button></div></div>
+ <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select id="paySupplier" onchange="renderPayments()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar OC / operación / cliente</label><input id="paySearch" placeholder="OC-000001" oninput="renderPayments()"></div><button class="secondary" onclick="paySelectAll()">Seleccionar todos</button><button class="secondary" onclick="payClear()">Limpiar</button></div><div id="pendingPayments"></div><div class="actions"><button class="primary" onclick="payOpenForm()">Aplicar pago</button></div></div>
  <div class="card"><h3>Historial de pagos</h3><div class="filters"><div class="field"><label>Proveedor</label><select id="historySupplier"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar pago / OC / comprobante</label><input id="historySearch" placeholder="P-000001 o TRX-123"></div></div><div id="paymentHistory"></div></div>`
 }
 function renderPayments(){
