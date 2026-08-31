@@ -693,7 +693,7 @@ init();
 <section id="tm-users-admin" style="display:none;padding:24px;max-width:1250px;margin:auto;">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;">
     <div><h2 style="margin:0 0 6px">Usuarios y permisos</h2><p style="margin:0;opacity:.7">Configura exactamente qué puede hacer cada usuario.</p></div>
-    <button type="button" id="tm-user-new">+ Nuevo usuario</button>
+    <button type="button" id="tm-user-new" class="primary" style="cursor:pointer;opacity:1;pointer-events:auto;">+ Nuevo usuario</button>
   </div>
   <div style="display:grid;grid-template-columns:280px 1fr;gap:18px">
     <div style="border:1px solid #ddd;border-radius:12px;padding:14px;background:#fff">
@@ -787,7 +787,15 @@ async function editUser(id){
  $('tm-user-message').textContent='';
 }
 function newUser(){ $('tm-user-id').value='';$('tm-user-form').reset();$('tm-user-role').value='user';$('tm-user-active').value='true';renderPermissions([]);$('tm-user-message').textContent='';}
-$('tm-user-new').onclick=newUser;$('tm-user-cancel').onclick=newUser;
+const tmNewUserBtn=$('tm-user-new');
+if(tmNewUserBtn){
+  tmNewUserBtn.disabled=false;
+  tmNewUserBtn.removeAttribute('disabled');
+  tmNewUserBtn.style.pointerEvents='auto';
+  tmNewUserBtn.style.cursor='pointer';
+  tmNewUserBtn.onclick=()=>newUser();
+}
+$('tm-user-cancel').onclick=()=>newUser();
 $('tm-perm-all').onclick=()=>document.querySelectorAll('#tm-permissions-grid input').forEach(x=>x.checked=true);
 $('tm-perm-none').onclick=()=>document.querySelectorAll('#tm-permissions-grid input').forEach(x=>x.checked=false);
 $('tm-user-form').onsubmit=async e=>{
