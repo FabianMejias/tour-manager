@@ -289,6 +289,353 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 
 </style>
 
+
+<style id="tm-dashboard-ui">
+
+.tm-dashboard{
+  width:100%;
+  max-width:1500px;
+  margin:0 auto;
+  padding:8px 0 30px;
+  box-sizing:border-box;
+}
+
+.tm-dash-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:24px;
+  margin-bottom:22px;
+}
+
+.tm-dash-eyebrow{
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:1.5px;
+  color:#12877f;
+  margin-bottom:4px;
+}
+
+.tm-dash-header h2{
+  margin:0;
+  font-size:32px;
+  line-height:1.15;
+  color:#17212b;
+}
+
+.tm-dash-header p{
+  margin:7px 0 0;
+  color:#718096;
+  font-size:15px;
+}
+
+.tm-dash-actions{
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+}
+
+.tm-period-wrap{
+  min-width:210px;
+}
+
+.tm-period-wrap label,
+.tm-dash-custom label{
+  display:block;
+  font-size:12px;
+  font-weight:700;
+  color:#64748b;
+  margin:0 0 6px;
+}
+
+.tm-period-wrap select,
+.tm-dash-custom input{
+  width:100%;
+  box-sizing:border-box;
+  min-height:44px;
+  border:1px solid #d9e1e8;
+  border-radius:10px;
+  background:#fff;
+  padding:0 13px;
+  font-size:14px;
+  color:#243142;
+}
+
+.tm-dash-refresh{
+  min-height:44px;
+  padding:0 17px;
+  border-radius:10px;
+  border:1px solid #168b83;
+  background:#fff;
+  color:#147b75;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.tm-dash-refresh:hover{
+  background:#f0faf9;
+}
+
+.tm-dash-period{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  background:#f5f9fa;
+  border:1px solid #e4ecee;
+  border-radius:999px;
+  padding:7px 13px;
+  color:#64748b;
+  font-size:13px;
+  margin-bottom:18px;
+}
+
+.tm-dash-period span{
+  color:#15958c;
+  font-size:9px;
+}
+
+.tm-dash-cards{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:16px;
+  margin-bottom:20px;
+}
+
+.tm-dash-card{
+  position:relative;
+  min-height:145px;
+  box-sizing:border-box;
+  background:#fff;
+  border:1px solid #e2e8ee;
+  border-radius:16px;
+  padding:19px 20px;
+  box-shadow:0 2px 10px rgba(30,45,60,.035);
+}
+
+.tm-dash-card-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  color:#52657b;
+  font-size:14px;
+  font-weight:700;
+}
+
+.tm-dash-card strong{
+  display:block;
+  margin-top:14px;
+  color:#17212b;
+  font-size:27px;
+  line-height:1.1;
+  letter-spacing:-.4px;
+}
+
+.tm-dash-card small{
+  display:block;
+  margin-top:8px;
+  color:#8996a5;
+  font-size:12px;
+}
+
+.tm-dash-icon{
+  width:34px;
+  height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:10px;
+  background:#f0f8f7;
+  color:#14877f;
+  font-size:17px;
+  font-weight:800;
+}
+
+.tm-dash-margin .tm-dash-icon{
+  background:#f2f6fb;
+  color:#3976b5;
+}
+
+.tm-dash-section{
+  background:#fff;
+  border:1px solid #e2e8ee;
+  border-radius:16px;
+  box-shadow:0 2px 10px rgba(30,45,60,.035);
+  overflow:hidden;
+}
+
+.tm-dash-section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:15px;
+  padding:20px 22px 16px;
+}
+
+.tm-dash-section-head h3{
+  margin:0;
+  color:#17212b;
+  font-size:18px;
+}
+
+.tm-dash-section-head p{
+  margin:5px 0 0;
+  color:#8a96a5;
+  font-size:12px;
+}
+
+.tm-dash-link{
+  border:1px solid #d2e2e1;
+  background:#fff;
+  color:#147f78;
+  border-radius:9px;
+  padding:8px 12px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.tm-dash-table-wrap{
+  overflow-x:auto;
+}
+
+.tm-dash-table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:900px;
+}
+
+.tm-dash-table th{
+  text-align:left;
+  background:#f8fafb;
+  color:#6b7c8f;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.45px;
+  padding:12px 14px;
+  border-top:1px solid #edf1f4;
+  border-bottom:1px solid #edf1f4;
+}
+
+.tm-dash-table td{
+  padding:13px 14px;
+  border-bottom:1px solid #edf1f4;
+  color:#344252;
+  font-size:13px;
+  vertical-align:middle;
+}
+
+.tm-dash-table tbody tr:last-child td{
+  border-bottom:0;
+}
+
+.tm-dash-table tbody tr:hover{
+  background:#fbfdfd;
+}
+
+.tm-dash-table td b{
+  color:#1d2936;
+}
+
+.tm-dash-time{
+  display:block;
+  margin-top:3px;
+  color:#8b98a7;
+  font-size:11px;
+}
+
+.tm-dash-status{
+  display:inline-block;
+  padding:5px 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+
+.tm-dash-status.paid{
+  background:#ecf8f1;
+  color:#21804d;
+  border:1px solid #c9ead8;
+}
+
+.tm-dash-status.pending{
+  background:#fff7e9;
+  color:#a86b12;
+  border:1px solid #f1dfb7;
+}
+
+.tm-dash-empty{
+  min-height:180px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  color:#718096;
+}
+
+.tm-dash-empty div{
+  font-size:28px;
+  color:#a5b2bf;
+}
+
+.tm-dash-empty b{
+  color:#4a5a6b;
+}
+
+.tm-dash-empty span{
+  font-size:12px;
+}
+
+.tm-dash-footer{
+  margin-top:13px;
+  color:#8b98a7;
+  font-size:11px;
+}
+
+.tm-dash-custom{
+  display:flex;
+  gap:12px;
+  max-width:460px;
+  margin:-4px 0 16px auto;
+}
+
+.tm-dash-custom>div{
+  flex:1;
+}
+
+@media(max-width:1100px){
+  .tm-dash-cards{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:760px){
+  .tm-dash-header{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .tm-dash-actions{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .tm-period-wrap{
+    min-width:0;
+  }
+
+  .tm-dash-cards{
+    grid-template-columns:1fr;
+  }
+
+  .tm-dash-custom{
+    margin:0 0 16px;
+    max-width:none;
+  }
+}
+
+</style>
+
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
@@ -360,12 +707,262 @@ function render(){
 function go(v){view=v;render()}
 
 function dashboard(){
- const rev=db.sales.reduce((a,x)=>a+(x.subtotal-x.discountAmount),0),cost=db.orders.reduce((a,x)=>a+x.subtotal,0);
- return `<div class="toolbar"><h2>Dashboard</h2></div><div class="cards">
- <div class="card">Ventas sin IVA<div class="metric">${money(rev)}</div></div><div class="card">Costos sin IVA<div class="metric">${money(cost)}</div></div>
- <div class="card">Margen<div class="metric">${money(rev-cost)}</div></div><div class="card">OCs pendientes<div class="metric">${db.orders.filter(o=>o.paymentStatus!=='Pagado').length}</div></div>
- <div class="card">Ventas<div class="metric">${db.sales.length}</div></div></div>
- <div class="card"><h3>Últimas órdenes</h3>${db.orders.length?`<table><tr><th>OC</th><th>Cliente</th><th>Tour</th><th>Servicio</th><th>Total</th></tr>${db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).slice(0,10).map(o=>`<tr><td>${o.number}</td><td>${esc(o.customerName)}</td><td>${esc(o.tour)}</td><td>${displayServiceDate(o.serviceDate)}</td><td>${money(o.total)}</td></tr>`).join('')}</table>`:'<div class="empty">No hay operaciones.</div>'}</div>`
+
+ const period=window.dashboardPeriod||'month';
+ const today=new Date();
+
+ function isoDate(d){
+   return d.getFullYear()+'-'+
+     String(d.getMonth()+1).padStart(2,'0')+'-'+
+     String(d.getDate()).padStart(2,'0');
+ }
+
+ function parseDate(value){
+   if(!value)return null;
+   const raw=String(value).trim();
+   const m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+   if(m)return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+   const d=new Date(raw);
+   return Number.isNaN(d.getTime())?null:d;
+ }
+
+ function inRange(value,from,to){
+   const d=parseDate(value);
+   if(!d)return false;
+   d.setHours(0,0,0,0);
+   return (!from||d>=from)&&(!to||d<=to);
+ }
+
+ let from=null;
+ let to=new Date(today);
+ to.setHours(23,59,59,999);
+
+ if(period==='month'){
+   from=new Date(today.getFullYear(),today.getMonth(),1);
+   from.setHours(0,0,0,0);
+ }else if(period==='previous'){
+   from=new Date(today.getFullYear(),today.getMonth()-1,1);
+   from.setHours(0,0,0,0);
+   to=new Date(today.getFullYear(),today.getMonth(),0);
+   to.setHours(23,59,59,999);
+ }else if(period==='30'){
+   from=new Date(today);
+   from.setDate(from.getDate()-29);
+   from.setHours(0,0,0,0);
+ }else if(period==='year'){
+   from=new Date(today.getFullYear(),0,1);
+   from.setHours(0,0,0,0);
+ }else if(period==='custom'){
+   const cf=parseDate(window.dashboardFrom||'');
+   const ct=parseDate(window.dashboardTo||'');
+   if(cf)from=cf;
+   if(ct){
+     to=ct;
+     to.setHours(23,59,59,999);
+   }
+ }else if(period==='all'){
+   from=null;
+   to=null;
+ }
+
+ const filteredSales=db.sales.filter(x=>period==='all'||inRange(x.serviceDate,from,to));
+ const filteredOrders=db.orders.filter(x=>period==='all'||inRange(x.serviceDate,from,to));
+
+ const sales=filteredSales.reduce((a,x)=>
+   a+(Number(x.subtotal||0)-Number(x.discountAmount||0)),0);
+
+ const costs=filteredOrders.reduce((a,x)=>
+   a+Number(x.subtotal||0),0);
+
+ const margin=sales-costs;
+
+ const pending=filteredOrders.filter(x=>
+   x.paymentStatus!=='Pagado'
+ ).length;
+
+ const invoices=filteredSales.length;
+
+ const paid=filteredOrders.filter(x=>
+   x.paymentStatus==='Pagado'
+ ).length;
+
+ const periodLabel={
+   month:'Este mes',
+   previous:'Mes anterior',
+   '30':'Últimos 30 días',
+   year:'Este año',
+   all:'Todo (acumulado)',
+   custom:'Personalizado'
+ }[period]||'Este mes';
+
+ const recent=filteredOrders
+   .slice()
+   .sort((a,b)=>String(b.number).localeCompare(String(a.number)))
+   .slice(0,8);
+
+ function icon(svg){
+   return `<div class="tm-dash-icon">${svg}</div>`;
+ }
+
+ const moneySafe=v=>money(Number(v||0));
+
+ const customBox=period==='custom'
+ ? `<div class="tm-dash-custom">
+      <div>
+        <label>Desde</label>
+        <input type="date"
+          value="${esc(window.dashboardFrom||'')}"
+          onchange="window.dashboardFrom=this.value;render()">
+      </div>
+      <div>
+        <label>Hasta</label>
+        <input type="date"
+          value="${esc(window.dashboardTo||'')}"
+          onchange="window.dashboardTo=this.value;render()">
+      </div>
+    </div>`
+ : '';
+
+ return `<div class="tm-dashboard">
+
+   <div class="tm-dash-header">
+     <div>
+       <div class="tm-dash-eyebrow">TOUR MANAGER</div>
+       <h2>Dashboard</h2>
+       <p>Resumen general de operaciones</p>
+     </div>
+
+     <div class="tm-dash-actions">
+       <div class="tm-period-wrap">
+         <label>Período</label>
+         <select onchange="window.dashboardPeriod=this.value;render()">
+           <option value="month" ${period==='month'?'selected':''}>Este mes</option>
+           <option value="previous" ${period==='previous'?'selected':''}>Mes anterior</option>
+           <option value="30" ${period==='30'?'selected':''}>Últimos 30 días</option>
+           <option value="year" ${period==='year'?'selected':''}>Este año</option>
+           <option value="all" ${period==='all'?'selected':''}>Todo (acumulado)</option>
+           <option value="custom" ${period==='custom'?'selected':''}>Personalizado</option>
+         </select>
+       </div>
+
+       <button class="tm-dash-refresh" onclick="render()">
+         ↻ &nbsp;Actualizar
+       </button>
+     </div>
+   </div>
+
+   ${customBox}
+
+   <div class="tm-dash-period">
+     <span>●</span>
+     Mostrando información de: <b>${periodLabel}</b>
+   </div>
+
+   <div class="tm-dash-cards">
+
+     <div class="tm-dash-card">
+       <div class="tm-dash-card-top">
+         <span>Ventas sin IVA</span>
+         ${icon('↗')}
+       </div>
+       <strong>${moneySafe(sales)}</strong>
+       <small>${invoices} factura${invoices===1?'':'s'} emitida${invoices===1?'':'s'}</small>
+     </div>
+
+     <div class="tm-dash-card">
+       <div class="tm-dash-card-top">
+         <span>Costos sin IVA</span>
+         ${icon('↘')}
+       </div>
+       <strong>${moneySafe(costs)}</strong>
+       <small>${filteredOrders.length} OC${filteredOrders.length===1?'':'s'} del período</small>
+     </div>
+
+     <div class="tm-dash-card tm-dash-margin">
+       <div class="tm-dash-card-top">
+         <span>Margen</span>
+         ${icon('◆')}
+       </div>
+       <strong>${moneySafe(margin)}</strong>
+       <small>Ventas − costos</small>
+     </div>
+
+     <div class="tm-dash-card">
+       <div class="tm-dash-card-top">
+         <span>OCs pendientes</span>
+         ${icon('◷')}
+       </div>
+       <strong>${pending}</strong>
+       <small>${paid} pagada${paid===1?'':'s'} en el período</small>
+     </div>
+
+   </div>
+
+   <div class="tm-dash-section">
+
+     <div class="tm-dash-section-head">
+       <div>
+         <h3>Últimas órdenes de compra</h3>
+         <p>Operaciones correspondientes al período seleccionado</p>
+       </div>
+       <button class="tm-dash-link" onclick="go('orders')">
+         Ver todas →
+       </button>
+     </div>
+
+     <div class="tm-dash-table-wrap">
+
+       ${recent.length ? `
+       <table class="tm-dash-table">
+         <thead>
+           <tr>
+             <th>OC</th>
+             <th>Cliente / Pasajero</th>
+             <th>Tour</th>
+             <th>Proveedor</th>
+             <th>Servicio</th>
+             <th>Total</th>
+             <th>Pago</th>
+           </tr>
+         </thead>
+         <tbody>
+           ${recent.map(o=>`
+             <tr>
+               <td><b>${esc(o.number)}</b></td>
+               <td>${esc(o.customerName||'-')}</td>
+               <td>${esc(o.tour||'-')}</td>
+               <td>${esc(supplier(o.supplierId)||'-')}</td>
+               <td>
+                 ${displayServiceDate(o.serviceDate)}
+                 <span class="tm-dash-time">${formatServiceTime(o.time)}</span>
+               </td>
+               <td><b>${moneySafe(o.total)}</b></td>
+               <td>
+                 <span class="tm-dash-status ${o.paymentStatus==='Pagado'?'paid':'pending'}">
+                   ${esc(o.paymentStatus||'Pendiente')}
+                 </span>
+               </td>
+             </tr>
+           `).join('')}
+         </tbody>
+       </table>
+       ` : `
+       <div class="tm-dash-empty">
+         <div>⌁</div>
+         <b>No hay operaciones en este período</b>
+         <span>Prueba seleccionando otro período.</span>
+       </div>
+       `}
+
+     </div>
+   </div>
+
+   <div class="tm-dash-footer">
+     Los datos mostrados corresponden al período seleccionado.
+     La opción <b>Todo (acumulado)</b> muestra todo el historial disponible.
+   </div>
+
+ </div>`;
 }
 
 function orders(){
