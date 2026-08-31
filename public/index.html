@@ -129,6 +129,7 @@ function orderForm(id=null){
  <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}"></div>
  <div class="field"><label>Hora</label><input id="ocTime" type="time" value="${o?.time||''}"></div>
  <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
+ <div class="field"><label>Drop Off</label><input id="ocDropOff" value="${esc(o?.dropOff||'')}"></div>
  <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
  <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"></div>
  <div class="field"><label>Moneda</label><select id="ocCurrency"><option ${o?.currency!=='CRC'?'selected':''}>USD</option><option ${o?.currency==='CRC'?'selected':''}>CRC</option></select></div>
@@ -144,7 +145,7 @@ function orderData(){
  const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
  if(!sellerId)return alert('Debe seleccionar un vendedor.'); if(!passenger||!service)return alert('Complete el nombre del cliente/pasajero y la fecha de servicio.');
  const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),applyTax=$('ocTaxApply')?.checked!==false,x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0),applyTax);
- return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
+ return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:$('ocTime').value,place:$('ocPlace').value,dropOff:$('ocDropOff').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
 }
 async function createOrder(){
  const d=orderData();
@@ -181,7 +182,7 @@ async function createOrder(){
      issueDate:dateOnly(x.issue_date),
      serviceDate:dateOnly(x.service_date),
      time:x.service_time||'',
-     place:x.pickup_place||'',
+     place:x.pickup_place||'',dropOff:x.drop_off||'',
      pax:Number(x.passengers||0),
      unitCost:Number(x.unit_cost||0),
      subtotal:Number(x.subtotal||0),
@@ -258,7 +259,7 @@ async function saveOrder(id){
      issueDate:dateOnly(x.issue_date),
      serviceDate:dateOnly(x.service_date),
      time:x.service_time||'',
-     place:x.pickup_place||'',
+     place:x.pickup_place||'',dropOff:x.drop_off||'',
      pax:Number(x.passengers||0),
      unitCost:Number(x.unit_cost||0),
      subtotal:Number(x.subtotal||0),
@@ -290,7 +291,14 @@ async function saveOrder(id){
 }
 
 function company(title){return `<div class="center"><b>${COMPANY.commercial}</b><br>${COMPANY.legal}<br>${COMPANY.phone}<br>${COMPANY.email}<br>${COMPANY.address}<hr><b>${title}</b></div>`}
-function orderDoc(o,ticket=false){const base=company('ORDEN DE COMPRA');return ticket?`<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div><p>${esc(o.notes||'')}</p></div>`}
+function orderDoc(o,ticket=false){
+ const base=company('ORDEN DE COMPRA');
+ const notes=o.notes?.trim()||'';
+ return ticket
+ ? `<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${o.serviceDate} ${o.time||''}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b>${notes?`<hr><b>Observaciones:</b><br>${esc(notes)}`:''}</div>`
+ : `<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${o.serviceDate}<br><b>Hora:</b> ${o.time||'-'}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div>${notes?`<p><b>Observaciones:</b><br>${esc(notes)}</p>`:''}</div>`
+}
+
 function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
 function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(orderDoc(o,true))}
 

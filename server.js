@@ -327,6 +327,7 @@ app.post('/api/purchase-orders', async (req, res) => {
         service_date,
         service_time,
         pickup_place,
+        drop_off,
         passengers,
         unit_cost,
         subtotal,
@@ -341,8 +342,8 @@ app.post('/api/purchase-orders', async (req, res) => {
         sale_id
       )
       VALUES(
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-        $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+        $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
       )
       RETURNING *
     `, [
@@ -358,6 +359,7 @@ app.post('/api/purchase-orders', async (req, res) => {
       d.serviceDate,
       d.time || null,
       d.place || null,
+      d.dropOff || null,
       Number(d.pax || 1),
       Number(d.unitCost || 0),
       Number(d.subtotal || 0),
@@ -463,16 +465,17 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
         service_date=$7,
         service_time=$8,
         pickup_place=$9,
-        passengers=$10,
-        unit_cost=$11,
-        subtotal=$12,
-        tax_rate=$13,
-        tax_amount=$14,
-        total=$15,
-        currency=$16,
-        notes=$17,
+        drop_off=$10,
+        passengers=$11,
+        unit_cost=$12,
+        subtotal=$13,
+        tax_rate=$14,
+        tax_amount=$15,
+        total=$16,
+        currency=$17,
+        notes=$18,
         updated_at=NOW()
-      WHERE id=$18
+      WHERE id=$19
       RETURNING *
     `, [
       d.clientId,
@@ -484,6 +487,7 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
       d.serviceDate || null,
       d.time || null,
       d.place || null,
+      d.dropOff || null,
       Number(d.pax || 1),
       Number(d.unitCost || 0),
       Number(d.subtotal || 0),
@@ -605,7 +609,7 @@ async function getState(client) {
     client.query(`SELECT id,name,contact,phone,email,notes,active FROM suppliers ORDER BY name`),
     client.query(`SELECT id,name,email,phone,commission_rate,active FROM sellers ORDER BY name`),
     client.query(`SELECT id,name,hotel_price,cost,currency,active FROM tours ORDER BY name`),
-    client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at FROM purchase_orders ORDER BY number DESC`),
+    client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at FROM purchase_orders ORDER BY number DESC`),
     client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency FROM sales ORDER BY number DESC`),
     client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes FROM payments ORDER BY number DESC`),
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
@@ -620,7 +624,7 @@ async function getState(client) {
     suppliers: suppliers.rows.map(x=>({id:x.id,name:x.name,contact:x.contact||'',phone:x.phone||'',email:x.email||'',notes:x.notes||''})),
     sellers: sellers.rows.map(x=>({id:x.id,name:x.name,email:x.email||'',phone:x.phone||'',commissionRate:Number(x.commission_rate||0)})),
     tours: tours.rows.map(x=>({id:x.id,name:x.name,hotel:Number(x.hotel_price||0),cost:Number(x.cost||0),currency:x.currency||'USD'})),
-    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
+    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
     sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD'})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
@@ -726,13 +730,13 @@ async function replaceState(client, db) {
       await client.query(`
         INSERT INTO purchase_orders(
           id,number,operation_number,client_id,supplier_id,seller_id,tour_id,
-          client_name,issue_date,service_date,service_time,pickup_place,
+          client_name,issue_date,service_date,service_time,pickup_place,drop_off,
           passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,
           notes,payment_status,payment_date,payment_receipt,sale_id
         )
         VALUES(
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-          $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+          $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
         )
         ON CONFLICT(id) DO UPDATE SET
           client_id=EXCLUDED.client_id,
@@ -744,6 +748,7 @@ async function replaceState(client, db) {
           service_date=EXCLUDED.service_date,
           service_time=EXCLUDED.service_time,
           pickup_place=EXCLUDED.pickup_place,
+          drop_off=EXCLUDED.drop_off,
           passengers=EXCLUDED.passengers,
           unit_cost=EXCLUDED.unit_cost,
           subtotal=EXCLUDED.subtotal,
@@ -758,7 +763,7 @@ async function replaceState(client, db) {
           sale_id=EXCLUDED.sale_id
       `,[
         x.id,x.number,x.op,x.clientId,x.supplierId,x.sellerId,x.tourId,
-        x.customerName,x.issueDate,x.serviceDate,x.time||null,x.place||null,
+        x.customerName,x.issueDate,x.serviceDate,x.time||null,x.place||null,x.dropOff||null,
         x.pax||1,Number(x.unitCost||0),Number(x.subtotal||0),
         Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
         x.currency||'USD',x.notes||null,x.paymentStatus||'Pendiente',
