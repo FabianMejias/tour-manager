@@ -801,6 +801,56 @@ const q = (text, params=[]) => pool.query(text, params);
 })();
 
 
+
+// ============================================================
+// AJUSTE DE VIGENCIA INICIAL 2026
+// ============================================================
+// La tarifa base inicial fue creada con vigencia:
+// 01/01/2026 -> 31/12/2026.
+//
+// Para el inicio del sistema de vigencias, se ajusta únicamente
+// esa tarifa base a:
+// 01/01/2026 -> 15/12/2026.
+//
+// IMPORTANTE:
+// - No modifica costo.
+// - No modifica precio de venta.
+// - No modifica estado.
+// - No modifica tours.
+// - No modifica OCs.
+// - No modifica ventas.
+// - No modifica pagos.
+// - Es idempotente.
+// ============================================================
+
+(async () => {
+  try {
+
+    const result = await pool.query(`
+      UPDATE tour_rates
+      SET
+        valid_to = DATE '2026-12-15',
+        updated_at = NOW()
+      WHERE
+        valid_from = DATE '2026-01-01'
+        AND valid_to = DATE '2026-12-31'
+    `);
+
+    console.log(
+      'OK: vigencias 2026 ajustadas a 15/12/2026:',
+      result.rowCount
+    );
+
+  } catch (e) {
+
+    console.error(
+      'ERROR ajustando vigencias 2026:',
+      e.message
+    );
+
+  }
+})();
+
 // ============================================================
 // API — TARIFAS POR VIGENCIA
 // ============================================================
@@ -1165,7 +1215,36 @@ async function getState(client) {
     client.query(`SELECT id,name,type,phone,email,currency,notes,active FROM clients ORDER BY name`),
     client.query(`SELECT id,name,contact,phone,email,notes,active FROM suppliers ORDER BY name`),
     client.query(`SELECT id,name,email,phone,commission_rate,active FROM sellers ORDER BY name`),
-    client.query(`SELECT id,name,hotel_price,cost,currency,active FROM tours ORDER BY name`),
+    client.query(`
+      SELECT
+        t.id,
+        t.name,
+        t.hotel_price,
+        t.cost,
+        t.currency,
+        t.active,
+        rate.cost AS current_rate_cost,
+        rate.sale_price AS current_rate_sale_price,
+        rate.valid_from AS current_rate_from,
+        rate.valid_to AS current_rate_to,
+        rate.active AS current_rate_active
+      FROM tours t
+      LEFT JOIN LATERAL (
+        SELECT
+          tr.cost,
+          tr.sale_price,
+          tr.valid_from,
+          tr.valid_to,
+          tr.active
+        FROM tour_rates tr
+        WHERE tr.tour_id = t.id
+          AND tr.active = TRUE
+          AND CURRENT_DATE BETWEEN tr.valid_from AND tr.valid_to
+        ORDER BY tr.valid_from DESC
+        LIMIT 1
+      ) rate ON TRUE
+      ORDER BY t.name
+    `),
     client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id FROM purchase_orders ORDER BY number DESC`),
     client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency FROM sales ORDER BY number DESC`),
     client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes FROM payments ORDER BY number DESC`),
@@ -1181,7 +1260,24 @@ async function getState(client) {
     clients: clients.rows.map(x=>({id:x.id,name:x.name,type:x.type||'',phone:x.phone||'',email:x.email||'',currency:x.currency||'USD',notes:x.notes||''})),
     suppliers: suppliers.rows.map(x=>({id:x.id,name:x.name,contact:x.contact||'',phone:x.phone||'',email:x.email||'',notes:x.notes||''})),
     sellers: sellers.rows.map(x=>({id:x.id,name:x.name,email:x.email||'',phone:x.phone||'',commissionRate:Number(x.commission_rate||0)})),
-    tours: tours.rows.map(x=>({id:x.id,name:x.name,hotel:Number(x.hotel_price||0),cost:Number(x.cost||0),currency:x.currency||'USD'})),
+    tours: tours.rows.map(x=>({
+      id:x.id,
+      name:x.name,
+      hotel:Number(
+        x.current_rate_sale_price ??
+        x.hotel_price ??
+        0
+      ),
+      cost:Number(
+        x.current_rate_cost ??
+        x.cost ??
+        0
+      ),
+      currency:x.currency||'USD',
+      currentRateFrom:x.current_rate_from,
+      currentRateTo:x.current_rate_to,
+      currentRateActive:x.current_rate_active
+    })),
     orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
     sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD'})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),

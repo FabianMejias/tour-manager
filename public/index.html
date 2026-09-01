@@ -2407,50 +2407,295 @@ function saveSimple(type,id=''){
  saveDB();closeModal();
 }
 function tours(){
- const rows=db.tours||[];
+
+ const rows=(db.tours||[])
+   .slice()
+   .sort((a,b)=>
+     String(a.name||'').localeCompare(
+       String(b.name||''),
+       'es',
+       {sensitivity:'base'}
+     )
+   );
+
+ const pageSize=20;
+
+ if(window.tmToursPage===undefined)
+   window.tmToursPage=1;
 
  return `
  <div class="toolbar">
+
    <div>
      <h2>Tours y tarifas</h2>
-     <small>Las tarifas se administran por período de vigencia.</small>
+     <small>
+       Administre tarifas por período de vigencia.
+     </small>
    </div>
-   <button class="primary" onclick="tourForm()">+ Nuevo tour</button>
+
+   <button
+     class="primary"
+     onclick="tourForm()">
+     + Nuevo tour
+   </button>
+
  </div>
 
  <div class="card">
- ${
-   rows.length
-   ?
-   `<table>
-     <tr>
-       <th>Tour</th>
-       <th>Precio hotel actual</th>
-       <th>Costo actual</th>
-       <th>Margen</th>
-       <th></th>
-     </tr>
 
-     ${rows.map(t=>`
-       <tr>
-         <td>${esc(t.name)}</td>
-         <td>${money(t.hotel)}</td>
-         <td>${money(t.cost)}</td>
-         <td>${money(Number(t.hotel||0)-Number(t.cost||0))}</td>
-         <td>
-           <button class="secondary"
-             onclick="tourForm('${t.id}')">
-             Editar
-           </button>
-         </td>
-       </tr>
-     `).join('')}
+   <div style="
+     display:flex;
+     gap:12px;
+     align-items:center;
+     justify-content:space-between;
+     flex-wrap:wrap;
+     margin-bottom:18px;
+   ">
 
-   </table>`
-   :
-   '<div class="empty">No hay tours.</div>'
+     <div style="flex:1;min-width:280px">
+
+       <input
+         id="tm-tour-search"
+         type="search"
+         placeholder="🔎 Buscar tour..."
+         value="${esc(window.tmToursSearch||'')}"
+         oninput="filterTours(this.value)"
+         style="
+           width:100%;
+           box-sizing:border-box;
+           padding:11px 13px;
+           border:1px solid #d1d5db;
+           border-radius:9px;
+           font-size:14px;
+         "
+       >
+
+     </div>
+
+     <div
+       id="tm-tour-count"
+       style="
+         font-size:13px;
+         color:#64748b;
+         white-space:nowrap;
+       ">
+     </div>
+
+   </div>
+
+   <div id="tm-tours-table">
+     ${tourTableHtml(rows)}
+   </div>
+
+ </div>
+ `;
+}
+
+
+function filterTours(value){
+
+ window.tmToursSearch=String(value||'').trim();
+ window.tmToursPage=1;
+
+ renderToursTable();
+
+}
+
+
+function renderToursTable(){
+
+ const box=$('tm-tours-table');
+
+ if(!box)return;
+
+ let rows=(db.tours||[])
+   .slice()
+   .sort((a,b)=>
+     String(a.name||'').localeCompare(
+       String(b.name||''),
+       'es',
+       {sensitivity:'base'}
+     )
+   );
+
+ const search=String(window.tmToursSearch||'')
+   .toLowerCase();
+
+ if(search){
+
+   rows=rows.filter(t=>
+     String(t.name||'')
+       .toLowerCase()
+       .includes(search)
+   );
+
  }
- </div>`;
+
+ box.innerHTML=tourTableHtml(rows);
+
+}
+
+
+function tourTableHtml(rows){
+
+ const total=rows.length;
+ const totalPages=Math.max(1,Math.ceil(total/20));
+
+ if(window.tmToursPage>totalPages)
+   window.tmToursPage=totalPages;
+
+ const page=window.tmToursPage||1;
+ const start=(page-1)*20;
+ const visible=rows.slice(start,start+20);
+ const count=$('tm-tour-count');
+
+ if(count){
+   count.textContent=total
+     ? `Mostrando ${start+1}-${Math.min(start+20,total)} de ${total} tours`
+     : '0 tours';
+ }
+
+ if(!visible.length){
+   return `
+     <div class="empty">
+       No se encontraron tours.
+     </div>
+   `;
+ }
+
+ return `
+ <div style="overflow-x:auto">
+   <table>
+     <thead>
+       <tr>
+         <th>Tour</th>
+         <th>Precio de venta</th>
+         <th>Costo</th>
+         <th>Margen de utilidad</th>
+         <th>Vigencia</th>
+         <th></th>
+       </tr>
+     </thead>
+
+     <tbody>
+
+       ${visible.map(t=>{
+
+         // Utilizar primero la tarifa vigente.
+         // Si no existe, conservar los valores originales del tour.
+         const sale=Number(
+           t.currentRateSalePrice ??
+           t.hotel ??
+           0
+         );
+
+         const cost=Number(
+           t.currentRateCost ??
+           t.cost ??
+           0
+         );
+
+         const margin=sale-cost;
+
+         const hasRate=
+           t.currentRateFrom &&
+           t.currentRateTo;
+
+         return `
+         <tr>
+
+           <td>
+             <strong>${esc(t.name)}</strong>
+           </td>
+
+           <td>
+             ${money(sale)}
+           </td>
+
+           <td>
+             ${money(cost)}
+           </td>
+
+           <td>
+             <strong>${money(margin)}</strong>
+           </td>
+
+           <td>
+             ${
+               hasRate
+               ? `<span style="font-size:12px;color:#475569">
+                    ${rateDate(t.currentRateFrom)}
+                    al
+                    ${rateDate(t.currentRateTo)}
+                  </span>`
+               : `<span style="font-size:12px;color:#b45309">
+                    Sin tarifa vigente
+                  </span>`
+             }
+           </td>
+
+           <td>
+             <button
+               class="secondary"
+               type="button"
+               onclick="tourForm('${t.id}')">
+               Editar
+             </button>
+           </td>
+
+         </tr>
+         `;
+
+       }).join('')}
+
+     </tbody>
+   </table>
+ </div>
+
+ <div style="
+   display:flex;
+   justify-content:center;
+   align-items:center;
+   gap:10px;
+   margin-top:18px;
+   flex-wrap:wrap;
+ ">
+
+   <button
+     class="secondary"
+     type="button"
+     ${page<=1?'disabled':''}
+     onclick="tourPage(${page-1})">
+     ‹ Anterior
+   </button>
+
+   <span style="
+     font-size:13px;
+     color:#64748b;
+     padding:0 8px;
+   ">
+     Página ${page} de ${totalPages}
+   </span>
+
+   <button
+     class="secondary"
+     type="button"
+     ${page>=totalPages?'disabled':''}
+     onclick="tourPage(${page+1})">
+     Siguiente ›
+   </button>
+
+ </div>
+ `;
+}
+
+
+function tourPage(page){
+
+ window.tmToursPage=Math.max(1,Number(page)||1);
+
+ renderToursTable();
+
 }
 
 
@@ -2858,38 +3103,67 @@ function tourForm(id=null){
 
  const t=id?db.tours.find(x=>x.id===id):null;
 
- if(id) window.tmCurrentTourId=id;
- else window.tmCurrentTourId=null;
+ if(id)
+   window.tmCurrentTourId=id;
+ else
+   window.tmCurrentTourId=null;
 
  modal(
    t?'Editar tour':'Nuevo tour',
-
    `
    <div class="tm-tour-form">
 
+     <div class="tm-rates-header" style="margin-bottom:18px">
+       <div>
+         <h3 style="margin:0">
+           ${t?'Editar tour':'Nuevo tour'}
+         </h3>
+         <p style="margin:6px 0 0">
+           ${t
+             ? 'Tour: <strong>'+esc(t.name)+'</strong>'
+             : 'Ingrese los datos básicos del tour.'
+           }
+         </p>
+       </div>
+     </div>
+
      <div class="grid">
 
-       <div class="field">
+       <div class="field full">
          <label>Tour *</label>
-         <input id="tourName"
-           value="${esc(t?.name||'')}">
+         <input
+           id="tourName"
+           value="${esc(t?.name||'')}"
+           placeholder="Nombre del tour">
        </div>
 
-       <div class="field">
-         <label>Precio hotel actual</label>
-         <input id="tourHotel"
-           type="number"
-           step=".01"
-           value="${t?.hotel||0}">
-       </div>
+       ${
+         !t
+         ?
+         `
+         <div class="field">
+           <label>Precio de venta inicial</label>
+           <input
+             id="tourHotel"
+             type="number"
+             step=".01"
+             min="0"
+             value="${t?.hotel||0}">
+         </div>
 
-       <div class="field">
-         <label>Costo actual</label>
-         <input id="tourCost"
-           type="number"
-           step=".01"
-           value="${t?.cost||0}">
-       </div>
+         <div class="field">
+           <label>Costo inicial</label>
+           <input
+             id="tourCost"
+             type="number"
+             step=".01"
+             min="0"
+             value="${t?.cost||0}">
+         </div>
+         `
+         :
+         ''
+       }
 
      </div>
 
@@ -2903,10 +3177,8 @@ function tourForm(id=null){
 
            <div>
              <h3>Tarifas por vigencia</h3>
-
              <p>
-               Configure costo y precio de venta según
-               la fecha del servicio.
+               Tarifas aplicadas según la fecha del servicio.
              </p>
            </div>
 
@@ -2920,9 +3192,11 @@ function tourForm(id=null){
          </div>
 
          <div id="tm-tour-rates">
+
            <div class="tm-rate-loading">
              Cargando tarifas...
            </div>
+
          </div>
 
        </div>
@@ -2930,14 +3204,12 @@ function tourForm(id=null){
        :
        `
        <div class="tm-new-tour-note">
-
          <strong>Tarifas por vigencia</strong>
-
          <p>
-           Primero guarde el tour. Después podrá configurar
-           sus tarifas para 2026, 2027 y períodos futuros.
+           Al crear el tour se generará automáticamente
+           la tarifa inicial del 01/01/2026 al 15/12/2026.
+           Después podrá agregar nuevos períodos.
          </p>
-
        </div>
        `
      }
@@ -2954,8 +3226,8 @@ function tourForm(id=null){
        <button
          type="button"
          class="primary"
-         onclick="saveTour('${id||''}')">
-         Guardar
+         onclick="${t?`saveTour('${id}')`:'saveTour()'}">
+         ${t?'Guardar cambios':'Guardar tour'}
        </button>
 
      </div>
@@ -2966,39 +3238,102 @@ function tourForm(id=null){
 
  if(t)
    renderTourRates(id);
-}
 
-function saveTour(id){
+}
+async function saveTour(id){
 
  const n=$('tourName').value.trim();
 
  if(!n)
    return alert('Ingrese el tour.');
 
- const d={
-   name:n,
-   hotel:+$('tourHotel').value||0,
-   cost:+$('tourCost').value||0
- };
+ const hotel=+$('tourHotel')?.value||0;
+ const cost=+$('tourCost')?.value||0;
 
  if(id){
+
+   // EDITAR TOUR:
+   // Solo se modifica el nombre.
+   // Las tarifas se administran por vigencia.
 
    const t=db.tours.find(x=>x.id===id);
 
    if(t)
-     Object.assign(t,d);
+     t.name=n;
+
+   saveDB();
+   closeModal();
 
  }else{
 
-   db.tours.push({
-     id:uid(),
-     ...d
-   });
+   // NUEVO TOUR:
+   // Conservamos costo y precio hotel inicial.
 
+   const tour={
+     id:uid(),
+     name:n,
+     hotel,
+     cost
+   };
+
+   db.tours.push(tour);
+   saveDB();
+
+   // Crear automáticamente la primera tarifa 2026.
+   try{
+
+     const response=await fetch(
+       '/api/tour-rates',
+       {
+         method:'POST',
+         headers:{
+           'Content-Type':'application/json'
+         },
+         body:JSON.stringify({
+           tourId:tour.id,
+           validFrom:'2026-01-01',
+           validTo:'2026-12-15',
+           cost,
+           salePrice:hotel,
+           active:true
+         })
+       }
+     );
+
+     const data=await response.json().catch(()=>({}));
+
+     if(!response.ok){
+
+       // El tour sí fue creado.
+       // Informamos que la tarifa inicial no pudo crearse.
+
+       closeModal();
+
+       alert(
+         'El tour fue creado, pero no se pudo crear automáticamente '+
+         'la tarifa inicial 2026: '+
+         (data.error||'Error de servidor')
+       );
+
+       return;
+     }
+
+     closeModal();
+
+   }catch(e){
+
+     closeModal();
+
+     alert(
+       'El tour fue creado, pero no se pudo crear automáticamente '+
+       'la tarifa inicial 2026. '+
+       (e.message||'Error de conexión.')
+     );
+   }
  }
 
- saveDB();
- closeModal();
+ view='tours';
+ render();
 }
 
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
