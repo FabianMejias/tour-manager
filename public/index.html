@@ -970,9 +970,41 @@ function orders(){
  const rows=db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).filter(o=>(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
  return `<div class="toolbar"><div><h2>Órdenes de compra</h2><small>La OC se genera primero. La factura se crea opcionalmente desde la OC.</small></div><button class="primary" onclick="orderForm()">+ Nueva OC</button></div>
  <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select onchange="window.orderSupplier=this.value;render()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}" ${sf===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar</label><input value="${esc(window.orderQ||'')}" oninput="window.orderQ=this.value;render()" placeholder="OC, cliente, tour..."></div></div></div>
- <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${displayServiceDate(o.serviceDate)}<br>${formatServiceTime(o.time)}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
+ <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Última modificación</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${displayServiceDate(o.serviceDate)}<br>${formatServiceTime(o.time)}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td>${o.updatedAt?`<div style="line-height:1.35"><b>${esc(o.updatedByUser||'Usuario')}</b><br><small>${displayDateTime(o.updatedAt)}</small></div>`:'<span style="color:#94a3b8">Sin registro</span>'}</td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
 }
 
+
+
+function displayDateTime(value){
+ const raw=String(value||'').trim();
+ if(!raw)return '-';
+
+ const d=new Date(raw);
+
+ if(Number.isNaN(d.getTime()))return raw;
+
+ const date=
+   String(d.getDate()).padStart(2,'0')+
+   '/'+
+   String(d.getMonth()+1).padStart(2,'0')+
+   '/'+
+   d.getFullYear();
+
+ let h=d.getHours();
+ const m=String(d.getMinutes()).padStart(2,'0');
+ const ampm=h>=12?'PM':'AM';
+
+ h=h%12;
+ if(h===0)h=12;
+
+ return date+
+   ' · '+
+   String(h).padStart(2,'0')+
+   ':'+
+   m+
+   ' '+
+   ampm;
+}
 
 function displayServiceDate(value){
  const raw=String(value||'').trim();
