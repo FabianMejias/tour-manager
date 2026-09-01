@@ -2716,33 +2716,18 @@ async function saveTourRate(tourId,rateId=''){
 
  const from=$('tm-rate-from')?.value||'';
  const to=$('tm-rate-to')?.value||'';
-
- const cost=
-   Number($('tm-rate-cost')?.value||0);
-
- const salePrice=
-   Number($('tm-rate-sale')?.value||0);
-
- const active=
-   $('tm-rate-active')?.value!=='false';
-
+ const cost=Number($('tm-rate-cost')?.value||0);
+ const salePrice=Number($('tm-rate-sale')?.value||0);
+ const active=$('tm-rate-active')?.value!=='false';
  const msg=$('tm-rate-message');
 
  if(!from||!to){
-
-   if(msg)
-     msg.textContent=
-       'Debe indicar ambas fechas.';
-
+   if(msg)msg.textContent='Debe indicar ambas fechas.';
    return;
  }
 
  if(to<from){
-
-   if(msg)
-     msg.textContent=
-       'La fecha final no puede ser anterior a la inicial.';
-
+   if(msg)msg.textContent='La fecha final no puede ser anterior a la inicial.';
    return;
  }
 
@@ -2757,9 +2742,33 @@ async function saveTourRate(tourId,rateId=''){
      active
    };
 
+   const callApi=async(url,opt={})=>{
+     const r=await fetch(
+       url,
+       Object.assign(
+         {
+           headers:{
+             'Content-Type':'application/json'
+           }
+         },
+         opt
+       )
+     );
+
+     const data=await r.json().catch(()=>({}));
+
+     if(!r.ok){
+       throw new Error(
+         data.error||'Error de servidor'
+       );
+     }
+
+     return data;
+   };
+
    if(rateId){
 
-     await api(
+     await callApi(
        '/api/tour-rates/'+
        encodeURIComponent(rateId),
        {
@@ -2770,14 +2779,13 @@ async function saveTourRate(tourId,rateId=''){
 
    }else{
 
-     await api(
+     await callApi(
        '/api/tour-rates',
        {
          method:'POST',
          body:JSON.stringify(payload)
        }
      );
-
    }
 
    tourForm(tourId);
@@ -2785,9 +2793,9 @@ async function saveTourRate(tourId,rateId=''){
  }catch(e){
 
    if(msg)
-     msg.textContent=e.message;
+     msg.textContent=e.message||'No fue posible guardar la tarifa.';
    else
-     alert(e.message);
+     alert(e.message||'No fue posible guardar la tarifa.');
 
  }
 }
