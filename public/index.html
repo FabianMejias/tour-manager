@@ -1275,6 +1275,7 @@ async function orderCostFromTour(){
  const tourId=$('ocTour')?.value||'';
  const serviceDate=$('ocService')?.value||'';
  const costInput=$('ocCost');
+ const info=$('tm-oc-rate-info');
 
  if(!tourId||!serviceDate||!costInput){
    orderCalc();
@@ -1292,12 +1293,21 @@ async function orderCostFromTour(){
 
  try{
 
-   const d=await api(
-     '/api/tour-rates/'+
-     encodeURIComponent(tourId)
+   // Consulta directa a la API.
+   // No depende de la función global api().
+   const response=await fetch(
+     '/api/tour-rates/'+encodeURIComponent(tourId)
    );
 
-   const rates=d.rates||[];
+   const data=await response.json().catch(()=>({}));
+
+   if(!response.ok){
+     throw new Error(
+       data.error||'No fue posible consultar las tarifas.'
+     );
+   }
+
+   const rates=data.rates||[];
 
    const rate=rates
      .filter(r=>
@@ -1311,14 +1321,11 @@ async function orderCostFromTour(){
        )
      )[0];
 
-   const info=$('tm-oc-rate-info');
-
    if(rate){
 
      costInput.value=Number(rate.cost||0).toFixed(2);
 
      if(info){
-
        info.innerHTML=
          '<span style="color:#14877f;font-weight:700">✓ Tarifa aplicada</span> '+
          rateDate(rate.validFrom)+
@@ -1326,42 +1333,36 @@ async function orderCostFromTour(){
          rateDate(rate.validTo)+
          ' · Costo: '+
          money(rate.cost);
-
      }
 
    }else{
 
      if(info){
-
        info.innerHTML=
          '<span style="color:#b45309;font-weight:700">⚠ Sin tarifa configurada</span> '+
          'para este tour en la fecha seleccionada. '+
          'Puede ingresar el costo manualmente.';
-
      }
 
      const t=db.tours.find(x=>x.id===tourId);
 
-     if(t && !costInput.value)
+     if(t && !costInput.value){
        costInput.value=Number(t.cost||0).toFixed(2);
-
+     }
    }
 
  }catch(e){
 
-   const info=$('tm-oc-rate-info');
-
    if(info){
-
      info.innerHTML=
        '<span style="color:#b91c1c;font-weight:700">No se pudo consultar la tarifa.</span> '+
-       esc(e.message);
-
+       esc(e.message||'Error de conexión.');
    }
 
  }
 
  orderCalc();
+
 }
 function orderCalc(){const base=(+$('ocPax')?.value||0)*(+$('ocCost')?.value||0);const x=calc(base,$('ocTaxApply')?.checked!==false);$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
 function orderData(){
