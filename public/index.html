@@ -2700,8 +2700,29 @@ function tourPage(page){
 
 
 async function loadTourRates(tourId){
- const d=await api('/api/tour-rates/'+encodeURIComponent(tourId));
- return d.rates||[];
+
+ const response = await fetch(
+   '/api/tour-rates/'+encodeURIComponent(tourId),
+   {
+     method:'GET',
+     headers:{
+       'Content-Type':'application/json'
+     }
+   }
+ );
+
+ const data = await response.json().catch(()=>({}));
+
+ if(!response.ok){
+   throw new Error(
+     data.error ||
+     'No fue posible cargar las tarifas del tour.'
+   );
+ }
+
+ return Array.isArray(data.rates)
+   ? data.rates
+   : [];
 }
 
 function rateDate(value){
