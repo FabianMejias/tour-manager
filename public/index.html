@@ -636,6 +636,145 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 
 </style>
 
+
+<style id="tm-tour-rates-ui">
+
+.tm-rates-panel{
+  margin-top:22px;
+  border:1px solid #e3e9ee;
+  border-radius:16px;
+  background:#fbfcfd;
+  overflow:hidden;
+}
+
+.tm-rates-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 20px;
+  border-bottom:1px solid #e3e9ee;
+}
+
+.tm-rates-header h3{
+  margin:0 0 5px;
+  font-size:17px;
+}
+
+.tm-rates-header p{
+  margin:0;
+  color:#718096;
+  font-size:13px;
+}
+
+.tm-rates-table-wrap{
+  overflow-x:auto;
+}
+
+.tm-rates-table{
+  width:100%;
+  border-collapse:collapse;
+  background:#fff;
+}
+
+.tm-rates-table th{
+  text-align:left;
+  padding:11px 13px;
+  background:#f5f7f9;
+  color:#526273;
+  font-size:12px;
+  white-space:nowrap;
+}
+
+.tm-rates-table td{
+  padding:12px 13px;
+  border-top:1px solid #edf0f3;
+  font-size:13px;
+  white-space:nowrap;
+}
+
+.tm-rate-actions{
+  text-align:right;
+}
+
+.tm-rate-actions button{
+  margin-left:5px;
+}
+
+.tm-rate-loading,
+.tm-rate-empty,
+.tm-rate-error{
+  padding:22px;
+  text-align:center;
+  color:#718096;
+  font-size:13px;
+}
+
+.tm-rate-error{
+  color:#b42318;
+}
+
+.tm-rate-form{
+  min-width:620px;
+}
+
+.tm-rate-form-head{
+  margin-bottom:18px;
+}
+
+.tm-rate-form-head h3{
+  margin:0 0 5px;
+}
+
+.tm-rate-form-head small{
+  color:#718096;
+}
+
+.tm-rate-message{
+  margin-top:10px;
+  min-height:20px;
+  color:#b42318;
+  font-size:13px;
+}
+
+.tm-new-tour-note{
+  margin-top:20px;
+  padding:15px 17px;
+  border:1px solid #dfe8eb;
+  border-radius:12px;
+  background:#f7fafb;
+}
+
+.tm-new-tour-note strong{
+  display:block;
+  margin-bottom:5px;
+}
+
+.tm-new-tour-note p{
+  margin:0;
+  color:#718096;
+  font-size:13px;
+}
+
+@media(max-width:700px){
+
+  .tm-rates-header{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .tm-rate-form{
+    min-width:0;
+  }
+
+  .tm-rates-table{
+    min-width:760px;
+  }
+
+}
+
+</style>
+
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
@@ -1097,6 +1236,7 @@ function timeTo24(){
 function orderForm(id=null){
  if(!db.clients.length||!db.tours.length||!db.suppliers.length||!db.sellers.length)return alert('Primero cree cliente, tour, proveedor y vendedor.');
  const o=id?db.orders.find(x=>x.id===id):null;
+ window.tmEditingOrder=!!o;
  modal(o?'Editar OC':'Nueva OC',`<div class="grid">
  <div class="field"><label>Cliente / cuenta</label><select id="ocClient">${db.clients.map(c=>`<option value="${c.id}" ${c.id===o?.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Nombre del Cliente / pasajero *</label><input id="ocPassenger" value="${esc(o?.customerName||'')}"></div>
@@ -1104,7 +1244,7 @@ function orderForm(id=null){
  <div class="field"><label>Proveedor</label><select id="ocSupplier">${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===o?.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Vendedor *</label><select id="ocSeller"><option value="">Seleccione un vendedor</option>${db.sellers.map(s=>`<option value="${s.id}" ${s.id===o?.sellerId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
  <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${dateOnly(o?.issueDate)||localDate()}"></div>
- <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}"></div>
+ <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}" onchange="orderCostFromTour()"></div>
  <div class="field">
 <label>Hora del servicio / Pickup</label>
 <div style="display:flex;gap:8px;align-items:center">
@@ -1122,7 +1262,7 @@ function orderForm(id=null){
  <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
  <div class="field"><label>Drop Off</label><input id="ocDropOff" value="${esc(o?.dropOff||'')}"></div>
  <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
- <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"></div>
+ <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"><small id="tm-oc-rate-info" style="display:block;margin-top:7px;color:#64748b"></small></div>
  <div class="field"><label>Moneda</label><select id="ocCurrency"><option ${o?.currency!=='CRC'?'selected':''}>USD</option><option ${o?.currency==='CRC'?'selected':''}>CRC</option></select></div>
  <div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="ocTaxApply" type="checkbox" ${o?.taxRate===0?'':'checked'} onchange="orderCalc()"> Aplicar IVA 13%</label></div>
  <div class="field full"><label>Observaciones</label><textarea id="ocNotes">${esc(o?.notes||'')}</textarea></div>
@@ -1130,7 +1270,99 @@ function orderForm(id=null){
  <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="${o?`saveOrder('${id}')`:'createOrder()'}">Guardar OC</button></div>`);
  orderCalc()
 }
-function orderCostFromTour(){const t=db.tours.find(x=>x.id===$('ocTour').value);if(t)$('ocCost').value=t.cost;orderCalc()}
+async function orderCostFromTour(){
+
+ const tourId=$('ocTour')?.value||'';
+ const serviceDate=$('ocService')?.value||'';
+ const costInput=$('ocCost');
+
+ if(!tourId||!serviceDate||!costInput){
+   orderCalc();
+   return;
+ }
+
+ // En una OC existente NO cambiamos automáticamente el costo.
+ // La tarifa por vigencia se aplica únicamente al crear una OC nueva.
+ const editing=window.tmEditingOrder===true;
+
+ if(editing){
+   orderCalc();
+   return;
+ }
+
+ try{
+
+   const d=await api(
+     '/api/tour-rates/'+
+     encodeURIComponent(tourId)
+   );
+
+   const rates=d.rates||[];
+
+   const rate=rates
+     .filter(r=>
+       r.active &&
+       String(r.validFrom||'').slice(0,10)<=serviceDate &&
+       String(r.validTo||'').slice(0,10)>=serviceDate
+     )
+     .sort((a,b)=>
+       String(b.validFrom||'').localeCompare(
+         String(a.validFrom||'')
+       )
+     )[0];
+
+   const info=$('tm-oc-rate-info');
+
+   if(rate){
+
+     costInput.value=Number(rate.cost||0).toFixed(2);
+
+     if(info){
+
+       info.innerHTML=
+         '<span style="color:#14877f;font-weight:700">✓ Tarifa aplicada</span> '+
+         rateDate(rate.validFrom)+
+         ' al '+
+         rateDate(rate.validTo)+
+         ' · Costo: '+
+         money(rate.cost);
+
+     }
+
+   }else{
+
+     if(info){
+
+       info.innerHTML=
+         '<span style="color:#b45309;font-weight:700">⚠ Sin tarifa configurada</span> '+
+         'para este tour en la fecha seleccionada. '+
+         'Puede ingresar el costo manualmente.';
+
+     }
+
+     const t=db.tours.find(x=>x.id===tourId);
+
+     if(t && !costInput.value)
+       costInput.value=Number(t.cost||0).toFixed(2);
+
+   }
+
+ }catch(e){
+
+   const info=$('tm-oc-rate-info');
+
+   if(info){
+
+     info.innerHTML=
+       '<span style="color:#b91c1c;font-weight:700">No se pudo consultar la tarifa.</span> '+
+       esc(e.message);
+
+   }
+
+ }
+
+ orderCalc();
+}
 function orderCalc(){const base=(+$('ocPax')?.value||0)*(+$('ocCost')?.value||0);const x=calc(base,$('ocTaxApply')?.checked!==false);$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
 function orderData(){
  const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
@@ -2173,9 +2405,592 @@ function saveSimple(type,id=''){
  }
  saveDB();closeModal();
 }
-function tours(){return `<div class="toolbar"><h2>Tours y tarifas</h2><button class="primary" onclick="tourForm()">+ Nuevo tour</button></div><div class="card">${db.tours.length?`<table><tr><th>Tour</th><th>Precio hotel</th><th>Costo</th><th>Margen</th><th></th></tr>${db.tours.map(t=>`<tr><td>${esc(t.name)}</td><td>${money(t.hotel)}</td><td>${money(t.cost)}</td><td>${money(t.hotel-t.cost)}</td><td><button class="secondary" onclick="tourForm('${t.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay tours.</div>'}</div>`}
-function tourForm(id=null){const t=id?db.tours.find(x=>x.id===id):null;modal(t?'Editar tour':'Nuevo tour',`<div class="grid"><div class="field"><label>Tour *</label><input id="tourName" value="${esc(t?.name||'')}"></div><div class="field"><label>Precio hotel</label><input id="tourHotel" type="number" step=".01" value="${t?.hotel||0}"></div><div class="field"><label>Costo</label><input id="tourCost" type="number" step=".01" value="${t?.cost||0}"></div></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveTour('${id||''}')">Guardar</button></div>`)}
-function saveTour(id){const n=$('tourName').value.trim();if(!n)return alert('Ingrese el tour.');const d={name:n,hotel:+$('tourHotel').value||0,cost:+$('tourCost').value||0};if(id)Object.assign(db.tours.find(t=>t.id===id),d);else db.tours.push({id:uid(),...d});saveDB();closeModal()}
+function tours(){
+ const rows=db.tours||[];
+
+ return `
+ <div class="toolbar">
+   <div>
+     <h2>Tours y tarifas</h2>
+     <small>Las tarifas se administran por período de vigencia.</small>
+   </div>
+   <button class="primary" onclick="tourForm()">+ Nuevo tour</button>
+ </div>
+
+ <div class="card">
+ ${
+   rows.length
+   ?
+   `<table>
+     <tr>
+       <th>Tour</th>
+       <th>Precio hotel actual</th>
+       <th>Costo actual</th>
+       <th>Margen</th>
+       <th></th>
+     </tr>
+
+     ${rows.map(t=>`
+       <tr>
+         <td>${esc(t.name)}</td>
+         <td>${money(t.hotel)}</td>
+         <td>${money(t.cost)}</td>
+         <td>${money(Number(t.hotel||0)-Number(t.cost||0))}</td>
+         <td>
+           <button class="secondary"
+             onclick="tourForm('${t.id}')">
+             Editar
+           </button>
+         </td>
+       </tr>
+     `).join('')}
+
+   </table>`
+   :
+   '<div class="empty">No hay tours.</div>'
+ }
+ </div>`;
+}
+
+
+async function loadTourRates(tourId){
+ const d=await api('/api/tour-rates/'+encodeURIComponent(tourId));
+ return d.rates||[];
+}
+
+function rateDate(value){
+ if(!value)return '';
+ const raw=String(value).slice(0,10);
+ const m=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ return m?`${m[3]}/${m[2]}/${m[1]}`:raw;
+}
+
+function rateStatus(r){
+ if(!r.active)
+   return '<span class="badge pending">Inactiva</span>';
+
+ const today=new Date();
+
+ const iso=
+   today.getFullYear()+'-'+
+   String(today.getMonth()+1).padStart(2,'0')+'-'+
+   String(today.getDate()).padStart(2,'0');
+
+ if(iso<r.validFrom)
+   return '<span class="badge pending">Próxima</span>';
+
+ if(iso>r.validTo)
+   return '<span class="badge pending">Vencida</span>';
+
+ return '<span class="badge">Vigente</span>';
+}
+
+function tourRatesHtml(rates){
+
+ if(!rates.length)
+   return `
+     <div class="tm-rate-empty">
+       No hay tarifas configuradas para este tour.
+     </div>
+   `;
+
+ return `
+ <div class="tm-rates-table-wrap">
+
+   <table class="tm-rates-table">
+
+     <thead>
+       <tr>
+         <th>Desde</th>
+         <th>Hasta</th>
+         <th>Costo</th>
+         <th>Precio venta</th>
+         <th>Margen</th>
+         <th>Estado</th>
+         <th></th>
+       </tr>
+     </thead>
+
+     <tbody>
+
+       ${rates.map(r=>`
+
+         <tr>
+
+           <td>${rateDate(r.validFrom)}</td>
+
+           <td>${rateDate(r.validTo)}</td>
+
+           <td>${money(r.cost)}</td>
+
+           <td>${money(r.salePrice)}</td>
+
+           <td>
+             ${money(
+               Number(r.salePrice||0) -
+               Number(r.cost||0)
+             )}
+           </td>
+
+           <td>${rateStatus(r)}</td>
+
+           <td class="tm-rate-actions">
+
+             <button
+               type="button"
+               class="secondary"
+               onclick="editTourRate('${r.id}')">
+               Editar
+             </button>
+
+             <button
+               type="button"
+               class="secondary"
+               onclick="toggleTourRate('${r.id}',${!r.active})">
+               ${r.active?'Inactivar':'Activar'}
+             </button>
+
+           </td>
+
+         </tr>
+
+       `).join('')}
+
+     </tbody>
+
+   </table>
+
+ </div>
+ `;
+}
+
+async function renderTourRates(tourId){
+
+ const box=$('tm-tour-rates');
+
+ if(!box)return;
+
+ box.innerHTML=
+   '<div class="tm-rate-loading">Cargando tarifas...</div>';
+
+ try{
+
+   const rates=await loadTourRates(tourId);
+
+   box.innerHTML=tourRatesHtml(rates);
+
+ }catch(e){
+
+   box.innerHTML=
+     '<div class="tm-rate-error">'+
+     esc(e.message)+
+     '</div>';
+
+ }
+}
+
+function tourRateForm(tourId,rate=null){
+
+ const isEdit=!!rate;
+
+ modal(
+   isEdit?'Editar tarifa':'Nueva tarifa',
+   `
+   <div class="tm-rate-form">
+
+     <div class="tm-rate-form-head">
+
+       <h3>
+         ${isEdit?'Editar tarifa':'Nueva tarifa por vigencia'}
+       </h3>
+
+       <small>
+         La tarifa se aplicará según la fecha del servicio.
+       </small>
+
+     </div>
+
+     <div class="grid">
+
+       <div class="field">
+
+         <label>Desde *</label>
+
+         <input
+           id="tm-rate-from"
+           type="date"
+           value="${rate?.validFrom||''}">
+
+       </div>
+
+       <div class="field">
+
+         <label>Hasta *</label>
+
+         <input
+           id="tm-rate-to"
+           type="date"
+           value="${rate?.validTo||''}">
+
+       </div>
+
+       <div class="field">
+
+         <label>Costo *</label>
+
+         <input
+           id="tm-rate-cost"
+           type="number"
+           step=".01"
+           min="0"
+           value="${rate?.cost??0}">
+
+       </div>
+
+       <div class="field">
+
+         <label>Precio de venta *</label>
+
+         <input
+           id="tm-rate-sale"
+           type="number"
+           step=".01"
+           min="0"
+           value="${rate?.salePrice??0}">
+
+       </div>
+
+       <div class="field">
+
+         <label>Estado</label>
+
+         <select id="tm-rate-active">
+
+           <option value="true"
+             ${rate?.active!==false?'selected':''}>
+             Activa
+           </option>
+
+           <option value="false"
+             ${rate?.active===false?'selected':''}>
+             Inactiva
+           </option>
+
+         </select>
+
+       </div>
+
+     </div>
+
+     <div
+       id="tm-rate-message"
+       class="tm-rate-message">
+     </div>
+
+     <div class="actions">
+
+       <button
+         type="button"
+         class="secondary"
+         onclick="tourForm('${tourId}')">
+         Cancelar
+       </button>
+
+       <button
+         type="button"
+         class="primary"
+         onclick="saveTourRate('${tourId}','${rate?.id||''}')">
+
+         ${isEdit?'Guardar cambios':'Crear tarifa'}
+
+       </button>
+
+     </div>
+
+   </div>
+   `
+ );
+}
+
+async function saveTourRate(tourId,rateId=''){
+
+ const from=$('tm-rate-from')?.value||'';
+ const to=$('tm-rate-to')?.value||'';
+
+ const cost=
+   Number($('tm-rate-cost')?.value||0);
+
+ const salePrice=
+   Number($('tm-rate-sale')?.value||0);
+
+ const active=
+   $('tm-rate-active')?.value!=='false';
+
+ const msg=$('tm-rate-message');
+
+ if(!from||!to){
+
+   if(msg)
+     msg.textContent=
+       'Debe indicar ambas fechas.';
+
+   return;
+ }
+
+ if(to<from){
+
+   if(msg)
+     msg.textContent=
+       'La fecha final no puede ser anterior a la inicial.';
+
+   return;
+ }
+
+ try{
+
+   const payload={
+     tourId,
+     validFrom:from,
+     validTo:to,
+     cost,
+     salePrice,
+     active
+   };
+
+   if(rateId){
+
+     await api(
+       '/api/tour-rates/'+
+       encodeURIComponent(rateId),
+       {
+         method:'PUT',
+         body:JSON.stringify(payload)
+       }
+     );
+
+   }else{
+
+     await api(
+       '/api/tour-rates',
+       {
+         method:'POST',
+         body:JSON.stringify(payload)
+       }
+     );
+
+   }
+
+   tourForm(tourId);
+
+ }catch(e){
+
+   if(msg)
+     msg.textContent=e.message;
+   else
+     alert(e.message);
+
+ }
+}
+
+async function editTourRate(rateId){
+
+ try{
+
+   const tourId=
+     window.tmCurrentTourId;
+
+   if(!tourId)return;
+
+   const rates=
+     await loadTourRates(tourId);
+
+   const rate=
+     rates.find(x=>x.id===rateId);
+
+   if(!rate)
+     return alert('No se encontró la tarifa.');
+
+   tourRateForm(tourId,rate);
+
+ }catch(e){
+
+   alert(e.message);
+
+ }
+}
+
+async function toggleTourRate(rateId,active){
+
+ try{
+
+   await api(
+     '/api/tour-rates/'+
+     encodeURIComponent(rateId)+
+     '/status',
+     {
+       method:'PATCH',
+       body:JSON.stringify({active})
+     }
+   );
+
+   if(window.tmCurrentTourId)
+     renderTourRates(
+       window.tmCurrentTourId
+     );
+
+ }catch(e){
+
+   alert(e.message);
+
+ }
+}
+
+function tourForm(id=null){
+
+ const t=id?db.tours.find(x=>x.id===id):null;
+
+ if(id) window.tmCurrentTourId=id;
+ else window.tmCurrentTourId=null;
+
+ modal(
+   t?'Editar tour':'Nuevo tour',
+
+   `
+   <div class="tm-tour-form">
+
+     <div class="grid">
+
+       <div class="field">
+         <label>Tour *</label>
+         <input id="tourName"
+           value="${esc(t?.name||'')}">
+       </div>
+
+       <div class="field">
+         <label>Precio hotel actual</label>
+         <input id="tourHotel"
+           type="number"
+           step=".01"
+           value="${t?.hotel||0}">
+       </div>
+
+       <div class="field">
+         <label>Costo actual</label>
+         <input id="tourCost"
+           type="number"
+           step=".01"
+           value="${t?.cost||0}">
+       </div>
+
+     </div>
+
+     ${
+       t
+       ?
+       `
+       <div class="tm-rates-panel">
+
+         <div class="tm-rates-header">
+
+           <div>
+             <h3>Tarifas por vigencia</h3>
+
+             <p>
+               Configure costo y precio de venta según
+               la fecha del servicio.
+             </p>
+           </div>
+
+           <button
+             type="button"
+             class="primary"
+             onclick="tourRateForm('${id}')">
+             + Nueva tarifa
+           </button>
+
+         </div>
+
+         <div id="tm-tour-rates">
+           <div class="tm-rate-loading">
+             Cargando tarifas...
+           </div>
+         </div>
+
+       </div>
+       `
+       :
+       `
+       <div class="tm-new-tour-note">
+
+         <strong>Tarifas por vigencia</strong>
+
+         <p>
+           Primero guarde el tour. Después podrá configurar
+           sus tarifas para 2026, 2027 y períodos futuros.
+         </p>
+
+       </div>
+       `
+     }
+
+     <div class="actions">
+
+       <button
+         type="button"
+         class="secondary"
+         onclick="closeModal()">
+         Cancelar
+       </button>
+
+       <button
+         type="button"
+         class="primary"
+         onclick="saveTour('${id||''}')">
+         Guardar
+       </button>
+
+     </div>
+
+   </div>
+   `
+ );
+
+ if(t)
+   renderTourRates(id);
+}
+
+function saveTour(id){
+
+ const n=$('tourName').value.trim();
+
+ if(!n)
+   return alert('Ingrese el tour.');
+
+ const d={
+   name:n,
+   hotel:+$('tourHotel').value||0,
+   cost:+$('tourCost').value||0
+ };
+
+ if(id){
+
+   const t=db.tours.find(x=>x.id===id);
+
+   if(t)
+     Object.assign(t,d);
+
+ }else{
+
+   db.tours.push({
+     id:uid(),
+     ...d
+   });
+
+ }
+
+ saveDB();
+ closeModal();
+}
 
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
 init();

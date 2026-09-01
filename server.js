@@ -313,6 +313,52 @@ app.post('/api/purchase-orders', async (req, res) => {
     const operationNumber = 'OP-' + String(nextOp).padStart(6, '0');
     const id = d.id || require('crypto').randomUUID();
 
+    // ============================================================
+    // TARIFA VIGENTE PARA OC NUEVA
+    // ============================================================
+    // Busca la tarifa utilizando:
+    //   TOUR + FECHA DEL SERVICIO
+    //
+    // Solo afecta OCs nuevas.
+    // Las OCs existentes conservan su costo.
+    //
+    // Si no existe una tarifa para esa fecha, se mantiene
+    // el costo ingresado manualmente por el vendedor.
+    // ============================================================
+
+    let finalUnitCost = Number(d.unitCost || 0);
+
+    const rateResult = await client.query(`
+      SELECT
+        id,
+        cost,
+        sale_price,
+        valid_from,
+        valid_to
+      FROM tour_rates
+      WHERE tour_id=$1
+        AND active=TRUE
+        AND valid_from <= $2::date
+        AND valid_to >= $2::date
+      ORDER BY valid_from DESC
+      LIMIT 1
+    `, [
+      d.tourId,
+      d.serviceDate
+    ]);
+
+    if (rateResult.rows.length) {
+      finalUnitCost = Number(rateResult.rows[0].cost || 0);
+    }
+
+    // Recalcular los importes utilizando el costo de la tarifa.
+    const finalPassengers = Number(d.pax || 1);
+    const finalSubtotal = finalUnitCost * finalPassengers;
+    const finalTaxRate = Number(d.taxRate ?? 13);
+    const finalTaxAmount = finalSubtotal * (finalTaxRate / 100);
+    const finalTotal = finalSubtotal + finalTaxAmount;
+
+
     const r = await client.query(`
       INSERT INTO purchase_orders(
         id,
@@ -360,12 +406,12 @@ app.post('/api/purchase-orders', async (req, res) => {
       d.time || null,
       d.place || null,
       d.dropOff || null,
-      Number(d.pax || 1),
-      Number(d.unitCost || 0),
-      Number(d.subtotal || 0),
-      Number(d.taxRate || 13),
-      Number(d.tax || 0),
-      Number(d.total || 0),
+      finalPassengers,
+      finalUnitCost,
+      finalSubtotal,
+      finalTaxRate,
+      finalTaxAmount,
+      finalTotal,
       d.currency || 'USD',
       d.notes || null,
       'Pendiente',
@@ -600,6 +646,70 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
 
+
+// ============================================================
+// TARIFAS POR VIGENCIA DE TOURS
+// ============================================================
+// Esta migración es aditiva.
+// No elimina ni modifica OCs, ventas ni tours existentes.
+//
+// Cada tarifa pertenece a un TOUR y tiene:
+// - fecha inicial
+// - fecha final
+// - costo
+// - precio de venta
+// - estado activo
+//
+// Las OCs existentes conservan sus propios valores.
+// ============================================================
+
+(async () => {
+  try {
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tour_rates (
+        id UUID PRIMARY KEY,
+        tour_id UUID NOT NULL REFERENCES tours(id) ON DELETE CASCADE,
+        valid_from DATE NOT NULL,
+        valid_to DATE NOT NULL,
+        cost NUMERIC(14,2) NOT NULL DEFAULT 0,
+        sale_price NUMERIC(14,2) NOT NULL DEFAULT 0,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        CONSTRAINT tour_rates_valid_dates
+          CHECK (valid_to >= valid_from),
+
+        CONSTRAINT tour_rates_cost_nonnegative
+          CHECK (cost >= 0),
+
+        CONSTRAINT tour_rates_sale_nonnegative
+          CHECK (sale_price >= 0)
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_tour_rates_tour
+      ON tour_rates(tour_id)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_tour_rates_dates
+      ON tour_rates(tour_id, valid_from, valid_to)
+    `);
+
+    console.log('OK: estructura de tarifas por vigencia disponible.');
+
+  } catch (e) {
+    console.error(
+      'ERROR creando tarifas por vigencia:',
+      e.message
+    );
+  }
+})();
+
+
 // ============================================================
 // AUDITORIA DE OCs
 // Registra automáticamente quién realizó la última modificación.
@@ -622,6 +732,427 @@ const q = (text, params=[]) => pool.query(text, params);
     console.error('ERROR creando auditoría de OCs:', e.message);
   }
 })();
+
+
+
+// ============================================================
+// CARGA INICIAL DE TARIFAS DE TOURS
+// ============================================================
+// Crea una tarifa base para los Tours que todavía no tengan
+// ninguna tarifa configurada.
+//
+// La tarifa base conserva los valores actuales:
+//   tours.cost        -> costo
+//   tours.hotel_price -> precio de venta
+//
+// La vigencia inicial llega hasta 31/12/2026.
+// Las tarifas de 2027 y futuras se configurarán posteriormente.
+//
+// IMPORTANTE:
+// - No modifica tours.
+// - No modifica OCs.
+// - No modifica ventas.
+// - No modifica pagos.
+// - No elimina registros.
+// - No duplica tarifas si ya existen.
+// ============================================================
+
+(async () => {
+  try {
+
+    const result = await pool.query(`
+      INSERT INTO tour_rates (
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active
+      )
+      SELECT
+        gen_random_uuid(),
+        t.id,
+        DATE '2026-01-01',
+        DATE '2026-12-31',
+        COALESCE(t.cost, 0),
+        COALESCE(t.hotel_price, 0),
+        TRUE
+      FROM tours t
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM tour_rates tr
+        WHERE tr.tour_id = t.id
+      )
+      RETURNING id
+    `);
+
+    console.log(
+      'OK: tarifas base creadas:',
+      result.rowCount
+    );
+
+  } catch (e) {
+    console.error(
+      'ERROR cargando tarifas base:',
+      e.message
+    );
+  }
+})();
+
+
+// ============================================================
+// API — TARIFAS POR VIGENCIA
+// ============================================================
+
+app.get('/api/tour-rates/:tourId', async (req,res) => {
+  if (!req.session.user)
+    return res.status(401).json({error:'No autenticado.'});
+
+  try {
+    const r = await pool.query(`
+      SELECT
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active,
+        created_at,
+        updated_at
+      FROM tour_rates
+      WHERE tour_id=$1
+      ORDER BY valid_from ASC, valid_to ASC
+    `,[req.params.tourId]);
+
+    res.json({
+      rates:r.rows.map(x=>({
+        id:x.id,
+        tourId:x.tour_id,
+        validFrom:x.valid_from,
+        validTo:x.valid_to,
+        cost:Number(x.cost||0),
+        salePrice:Number(x.sale_price||0),
+        active:x.active,
+        createdAt:x.created_at,
+        updatedAt:x.updated_at
+      }))
+    });
+
+  } catch(e) {
+    console.error('Error consultando tarifas:',e);
+    res.status(500).json({
+      error:'No fue posible consultar las tarifas.'
+    });
+  }
+});
+
+
+app.post('/api/tour-rates', async (req,res) => {
+  if (!req.session.user)
+    return res.status(401).json({error:'No autenticado.'});
+
+  const {
+    tourId,
+    validFrom,
+    validTo,
+    cost,
+    salePrice,
+    active=true
+  } = req.body || {};
+
+  if (!tourId || !validFrom || !validTo)
+    return res.status(400).json({
+      error:'Tour, fecha inicial y fecha final son obligatorios.'
+    });
+
+  const costNumber=Number(cost);
+  const saleNumber=Number(salePrice);
+
+  if (!Number.isFinite(costNumber) || costNumber<0)
+    return res.status(400).json({
+      error:'El costo debe ser un número mayor o igual a cero.'
+    });
+
+  if (!Number.isFinite(saleNumber) || saleNumber<0)
+    return res.status(400).json({
+      error:'El precio de venta debe ser un número mayor o igual a cero.'
+    });
+
+  if (validTo < validFrom)
+    return res.status(400).json({
+      error:'La fecha final no puede ser anterior a la fecha inicial.'
+    });
+
+  try {
+
+    const overlap = await pool.query(`
+      SELECT id
+      FROM tour_rates
+      WHERE tour_id=$1
+        AND active=TRUE
+        AND $2::date <= valid_to
+        AND $3::date >= valid_from
+      LIMIT 1
+    `,[tourId,validFrom,validTo]);
+
+    if (overlap.rows.length)
+      return res.status(409).json({
+        error:'Las fechas se superponen con otra tarifa activa de este tour.'
+      });
+
+    const r = await pool.query(`
+      INSERT INTO tour_rates(
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active
+      )
+      VALUES(
+        gen_random_uuid(),
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6
+      )
+      RETURNING
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active,
+        created_at,
+        updated_at
+    `,[
+      tourId,
+      validFrom,
+      validTo,
+      costNumber,
+      saleNumber,
+      active !== false
+    ]);
+
+    const x=r.rows[0];
+
+    res.json({
+      rate:{
+        id:x.id,
+        tourId:x.tour_id,
+        validFrom:x.valid_from,
+        validTo:x.valid_to,
+        cost:Number(x.cost||0),
+        salePrice:Number(x.sale_price||0),
+        active:x.active,
+        createdAt:x.created_at,
+        updatedAt:x.updated_at
+      }
+    });
+
+  } catch(e) {
+    console.error('Error creando tarifa:',e);
+    res.status(500).json({
+      error:'No fue posible crear la tarifa.'
+    });
+  }
+});
+
+
+app.put('/api/tour-rates/:id', async (req,res) => {
+  if (!req.session.user)
+    return res.status(401).json({error:'No autenticado.'});
+
+  const {
+    validFrom,
+    validTo,
+    cost,
+    salePrice,
+    active
+  } = req.body || {};
+
+  if (!validFrom || !validTo)
+    return res.status(400).json({
+      error:'Fecha inicial y fecha final son obligatorias.'
+    });
+
+  const costNumber=Number(cost);
+  const saleNumber=Number(salePrice);
+
+  if (!Number.isFinite(costNumber) || costNumber<0)
+    return res.status(400).json({
+      error:'El costo debe ser un número mayor o igual a cero.'
+    });
+
+  if (!Number.isFinite(saleNumber) || saleNumber<0)
+    return res.status(400).json({
+      error:'El precio de venta debe ser un número mayor o igual a cero.'
+    });
+
+  if (validTo < validFrom)
+    return res.status(400).json({
+      error:'La fecha final no puede ser anterior a la fecha inicial.'
+    });
+
+  try {
+
+    const current = await pool.query(`
+      SELECT id,tour_id,active
+      FROM tour_rates
+      WHERE id=$1
+    `,[req.params.id]);
+
+    if (!current.rows.length)
+      return res.status(404).json({
+        error:'Tarifa no encontrada.'
+      });
+
+    const tourId=current.rows[0].tour_id;
+    const isActive=active !== false;
+
+    if (isActive) {
+
+      const overlap = await pool.query(`
+        SELECT id
+        FROM tour_rates
+        WHERE tour_id=$1
+          AND id<>$2
+          AND active=TRUE
+          AND $3::date <= valid_to
+          AND $4::date >= valid_from
+        LIMIT 1
+      `,[
+        tourId,
+        req.params.id,
+        validFrom,
+        validTo
+      ]);
+
+      if (overlap.rows.length)
+        return res.status(409).json({
+          error:'Las fechas se superponen con otra tarifa activa de este tour.'
+        });
+    }
+
+    const r=await pool.query(`
+      UPDATE tour_rates
+      SET
+        valid_from=$1,
+        valid_to=$2,
+        cost=$3,
+        sale_price=$4,
+        active=$5,
+        updated_at=NOW()
+      WHERE id=$6
+      RETURNING
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active,
+        created_at,
+        updated_at
+    `,[
+      validFrom,
+      validTo,
+      costNumber,
+      saleNumber,
+      isActive,
+      req.params.id
+    ]);
+
+    const x=r.rows[0];
+
+    res.json({
+      rate:{
+        id:x.id,
+        tourId:x.tour_id,
+        validFrom:x.valid_from,
+        validTo:x.valid_to,
+        cost:Number(x.cost||0),
+        salePrice:Number(x.sale_price||0),
+        active:x.active,
+        createdAt:x.created_at,
+        updatedAt:x.updated_at
+      }
+    });
+
+  } catch(e) {
+    console.error('Error actualizando tarifa:',e);
+    res.status(500).json({
+      error:'No fue posible actualizar la tarifa.'
+    });
+  }
+});
+
+
+app.patch('/api/tour-rates/:id/status', async (req,res) => {
+  if (!req.session.user)
+    return res.status(401).json({error:'No autenticado.'});
+
+  const active=req.body?.active;
+
+  if (typeof active!=='boolean')
+    return res.status(400).json({
+      error:'El estado debe ser verdadero o falso.'
+    });
+
+  try {
+
+    const r=await pool.query(`
+      UPDATE tour_rates
+      SET
+        active=$1,
+        updated_at=NOW()
+      WHERE id=$2
+      RETURNING
+        id,
+        tour_id,
+        valid_from,
+        valid_to,
+        cost,
+        sale_price,
+        active,
+        created_at,
+        updated_at
+    `,[active,req.params.id]);
+
+    if (!r.rows.length)
+      return res.status(404).json({
+        error:'Tarifa no encontrada.'
+      });
+
+    const x=r.rows[0];
+
+    res.json({
+      rate:{
+        id:x.id,
+        tourId:x.tour_id,
+        validFrom:x.valid_from,
+        validTo:x.valid_to,
+        cost:Number(x.cost||0),
+        salePrice:Number(x.sale_price||0),
+        active:x.active,
+        createdAt:x.created_at,
+        updatedAt:x.updated_at
+      }
+    });
+
+  } catch(e) {
+    console.error('Error cambiando estado de tarifa:',e);
+    res.status(500).json({
+      error:'No fue posible cambiar el estado de la tarifa.'
+    });
+  }
+});
 
 
 app.get('/api/health', async (req,res) => {
