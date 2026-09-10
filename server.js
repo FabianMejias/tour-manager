@@ -482,6 +482,13 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
     }
 
     const currentOrder = current.rows[0];
+
+    if ((currentOrder.status || 'active') === 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta OC está cancelada. Debe reactivarla antes de editarla.'
+      });
+    }
     const currentUpdatedAt = new Date(currentOrder.updated_at).getTime();
     const receivedUpdatedAt = new Date(d.updatedAt).getTime();
 
@@ -568,6 +575,255 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
   }
 
 });
+
+
+
+// ============================================================
+// ESTADO Y CANCELACION DE OCs
+// Migración aditiva: no elimina ni modifica OCs existentes.
+// Las OCs históricas con status NULL se interpretan como activas.
+// ============================================================
+
+(async () => {
+  try {
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS status TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancellation_reason TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancellation_notes TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancelled_by_user_id UUID
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_orders_status
+      ON purchase_orders(status)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_orders_cancelled_by
+      ON purchase_orders(cancelled_by_user_id)
+    `);
+
+    console.log('OK: estado y cancelación de OCs disponible.');
+
+  } catch (e) {
+
+    console.error(
+      'ERROR creando estado y cancelación de OCs:',
+      e.message
+    );
+
+  }
+})();
+
+
+// ============================================================
+// CANCELAR ORDEN DE COMPRA
+// Conserva la OC para historial y auditoría.
+// ============================================================
+
+app.post('/api/purchase-orders/:id/cancel', async (req, res) => {
+
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'purchase_orders.edit')))
+    return res.status(403).json({
+      error: 'No tiene permiso para cancelar órdenes de compra.'
+    });
+
+  const reason = String(req.body?.reason || '').trim();
+  const notes = String(req.body?.notes || '').trim();
+
+  if (!reason)
+    return res.status(400).json({
+      error: 'Debe indicar el motivo de cancelación.'
+    });
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const check = await client.query(`
+      SELECT
+        id,
+        number,
+        sale_id,
+        COALESCE(status, 'active') AS status,
+        updated_at,
+        EXISTS(
+          SELECT 1
+          FROM payment_purchase_orders ppo
+          WHERE ppo.purchase_order_id = purchase_orders.id
+        ) AS has_payment
+      FROM purchase_orders
+      WHERE id=$1
+      FOR UPDATE
+    `, [req.params.id]);
+
+    if (!check.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'Orden de compra no encontrada.'
+      });
+    }
+
+    const o = check.rows[0];
+
+    if (o.status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta OC ya se encuentra cancelada.'
+      });
+    }
+
+    // Una OC con factura o pago asociado no debe cancelarse
+    // sin un flujo específico de reversión.
+    if (o.sale_id || o.has_payment) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta OC tiene una factura o pago asociado y no puede cancelarse desde Órdenes de Compra.'
+      });
+    }
+
+    const r = await client.query(`
+      UPDATE purchase_orders
+      SET
+        status='cancelled',
+        cancellation_reason=$1,
+        cancellation_notes=$2,
+        cancelled_at=NOW(),
+        cancelled_by_user_id=$3,
+        updated_at=NOW(),
+        updated_by_user_id=$3
+      WHERE id=$4
+      RETURNING *
+    `, [
+      reason,
+      notes || null,
+      req.session.user.id,
+      req.params.id
+    ]);
+
+    await client.query('COMMIT');
+
+    res.json({ order: r.rows[0] });
+
+  } catch (e) {
+
+    await client.query('ROLLBACK');
+
+    console.error('Error cancelando OC:', e);
+
+    res.status(500).json({
+      error: 'No fue posible cancelar la orden de compra.'
+    });
+
+  } finally {
+    client.release();
+  }
+});
+
+
+// ============================================================
+// REACTIVAR ORDEN DE COMPRA
+// Mantiene la OC y devuelve su estado operativo a Activa.
+// ============================================================
+
+app.post('/api/purchase-orders/:id/reactivate', async (req, res) => {
+
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'purchase_orders.edit')))
+    return res.status(403).json({
+      error: 'No tiene permiso para reactivar órdenes de compra.'
+    });
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const check = await client.query(`
+      SELECT
+        id,
+        number,
+        COALESCE(status, 'active') AS status
+      FROM purchase_orders
+      WHERE id=$1
+      FOR UPDATE
+    `, [req.params.id]);
+
+    if (!check.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'Orden de compra no encontrada.'
+      });
+    }
+
+    const o = check.rows[0];
+
+    if (o.status !== 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta OC ya se encuentra activa.'
+      });
+    }
+
+    const r = await client.query(`
+      UPDATE purchase_orders
+      SET
+        status='active',
+        updated_at=NOW(),
+        updated_by_user_id=$1
+      WHERE id=$2
+      RETURNING *
+    `, [
+      req.session.user.id,
+      req.params.id
+    ]);
+
+    await client.query('COMMIT');
+
+    res.json({ order: r.rows[0] });
+
+  } catch (e) {
+
+    await client.query('ROLLBACK');
+
+    console.error('Error reactivando OC:', e);
+
+    res.status(500).json({
+      error: 'No fue posible reactivar la orden de compra.'
+    });
+
+  } finally {
+    client.release();
+  }
+});
+
 
 app.delete('/api/purchase-orders/:id', async (req, res) => {
   if (!req.session.user)
@@ -1274,7 +1530,7 @@ async function getState(client) {
       ) rate ON TRUE
       ORDER BY t.name
     `),
-    client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id FROM purchase_orders ORDER BY number DESC`),
+    client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id,status,cancellation_reason,cancellation_notes,cancelled_at,cancelled_by_user_id FROM purchase_orders ORDER BY number DESC`),
     client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method FROM sales ORDER BY number DESC`),
     client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes FROM payments ORDER BY number DESC`),
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
@@ -1307,7 +1563,7 @@ async function getState(client) {
       currentRateTo:x.current_rate_to,
       currentRateActive:x.current_rate_active
     })),
-    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
+    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
     sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||''})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
@@ -1375,7 +1631,95 @@ async function replaceState(client, db) {
       `,[x.id,x.name,Number(x.hotel||0),Number(x.cost||0),x.currency||'USD']);
     }
 
-    for (const x of (db.sales || [])) {
+    // ========================================================
+    // PROTECCION DE FACTURACION DE OCs CANCELADAS
+    // ========================================================
+    //
+    // Las facturas se reciben mediante /api/state.
+    // Antes de insertar o actualizar ventas, verificamos contra
+    // PostgreSQL que ninguna venta NUEVA esté vinculada a una
+    // orden de compra cancelada.
+    //
+    // Las facturas históricas ya existentes no se alteran.
+    // ========================================================
+
+    const incomingSales = db.sales || [];
+
+    if (incomingSales.length) {
+
+      const incomingSaleIds = incomingSales
+        .map(x => x.id)
+        .filter(Boolean);
+
+      const existingSaleIds = new Set();
+
+      if (incomingSaleIds.length) {
+
+        const existingSales = await client.query(
+          `
+            SELECT id
+            FROM sales
+            WHERE id = ANY($1::uuid[])
+          `,
+          [incomingSaleIds]
+        );
+
+        for (const row of existingSales.rows) {
+          existingSaleIds.add(row.id);
+        }
+
+      }
+
+      const newSales = incomingSales.filter(
+        x => x.id && !existingSaleIds.has(x.id)
+      );
+
+      for (const sale of newSales) {
+
+        const linkedOrder = (db.orders || []).find(
+          o =>
+            o.id === sale.orderId ||
+            (
+              o.saleId === sale.id &&
+              sale.id
+            )
+        );
+
+        if (!linkedOrder?.id) {
+          continue;
+        }
+
+        const orderCheck = await client.query(
+          `
+            SELECT
+              id,
+              number,
+              COALESCE(status, 'active') AS status
+            FROM purchase_orders
+            WHERE id=$1
+          `,
+          [linkedOrder.id]
+        );
+
+        if (
+          orderCheck.rows.length &&
+          orderCheck.rows[0].status === 'cancelled'
+        ) {
+          const err = new Error(
+            'No se puede generar una factura para la OC ' +
+            orderCheck.rows[0].number +
+            ' porque se encuentra cancelada.'
+          );
+
+          err.code = 'OC_CANCELLED';
+          throw err;
+        }
+
+      }
+
+    }
+
+    for (const x of incomingSales) {
       await client.query(`
         INSERT INTO sales(
           id,number,operation_number,client_id,seller_id,tour_id,client_name,
@@ -1417,11 +1761,13 @@ async function replaceState(client, db) {
           id,number,operation_number,client_id,supplier_id,seller_id,tour_id,
           client_name,issue_date,service_date,service_time,pickup_place,drop_off,
           passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,
-          notes,payment_status,payment_date,payment_receipt,sale_id
+          notes,payment_status,payment_date,payment_receipt,sale_id,
+          status,cancellation_reason,cancellation_notes,cancelled_at,cancelled_by_user_id
         )
         VALUES(
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-          $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+          $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,
+          $26,$27,$28,$29,$30
         )
         ON CONFLICT(id) DO UPDATE SET
           client_id=EXCLUDED.client_id,
@@ -1452,7 +1798,12 @@ async function replaceState(client, db) {
         x.pax||1,Number(x.unitCost||0),Number(x.subtotal||0),
         Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
         x.currency||'USD',x.notes||null,x.paymentStatus||'Pendiente',
-        x.paymentDate||null,x.paymentReceipt||null,x.saleId||null
+        x.paymentDate||null,x.paymentReceipt||null,x.saleId||null,
+        x.status||null,
+        x.cancellationReason||null,
+        x.cancellationNotes||null,
+        x.cancelledAt||null,
+        x.cancelledByUserId||null
       ]);
     }
 

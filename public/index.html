@@ -1104,14 +1104,1078 @@ function dashboard(){
  </div>`;
 }
 
-function orders(){
- const q=(window.orderQ||'').toLowerCase(),sf=window.orderSupplier||'';
- const rows=db.orders.slice().sort((a,b)=>b.number.localeCompare(a.number)).filter(o=>(!sf||o.supplierId===sf)&&(!q||[o.number,o.op,o.customerName,o.tour,supplier(o.supplierId)].join(' ').toLowerCase().includes(q)));
- return `<div class="toolbar"><div><h2>Órdenes de compra</h2><small>La OC se genera primero. La factura se crea opcionalmente desde la OC.</small></div><button class="primary" onclick="orderForm()">+ Nueva OC</button></div>
- <div class="card"><div class="filters"><div class="field"><label>Proveedor</label><select onchange="window.orderSupplier=this.value;render()"><option value="">Todos</option>${db.suppliers.map(s=>`<option value="${s.id}" ${sf===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Buscar</label><input value="${esc(window.orderQ||'')}" oninput="window.orderQ=this.value;render()" placeholder="OC, cliente, tour..."></div></div></div>
- <div class="card">${rows.length?`<table><tr><th>OC</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Proveedor</th><th>Servicio</th><th>Total</th><th>Pago</th><th>Última modificación</th><th>Acciones</th></tr>${rows.map(o=>`<tr><td>${o.number}</td><td>${o.op}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(o.tour)}</td><td>${esc(supplier(o.supplierId))}</td><td>${displayServiceDate(o.serviceDate)}<br>${formatServiceTime(o.time)}</td><td>${money(o.total)}</td><td><span class="badge ${o.paymentStatus==='Pagado'?'':'pending'}">${o.paymentStatus}</span></td><td>${o.updatedAt?`<div style="line-height:1.35"><b>${esc(o.updatedByUser||'Usuario')}</b><br><small>${displayDateTime(o.updatedAt)}</small></div>`:'<span style="color:#94a3b8">Sin registro</span>'}</td><td><button class="secondary" onclick="orderForm('${o.id}')">Editar</button> <button class="secondary" onclick="previewOrder('${o.id}')">Vista previa</button> ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:`<button class="primary" onclick="saleForm('${o.id}')">Generar factura</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">No hay órdenes.</div>'}</div>`
+function tmOrderSearchText(v){
+  return String(v||'')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .trim();
 }
 
+function filterOrderRows(){
+  const input=$('tmOrderSearch');
+  const supplierSelect=$('tmOrderSupplier');
+  const statusSelect=$('tmOrderStatus');
+
+  const q=tmOrderSearchText(input?.value||'');
+  const sf=supplierSelect?.value||'';
+  const status=statusSelect?.value||'active';
+
+  window.orderQ=input?.value||'';
+  window.orderSupplier=sf;
+  window.orderStatus=status;
+
+  let visible=0;
+
+  document.querySelectorAll('.tm-oc-row').forEach(row=>{
+    const rowStatus=row.dataset.status||'active';
+
+    const searchOK=
+      !q ||
+      tmOrderSearchText(row.dataset.search||'').includes(q);
+
+    const supplierOK=
+      !sf ||
+      row.dataset.supplier===sf;
+
+    const statusOK=
+      status==='all' ||
+      (status==='active' && rowStatus!=='cancelled') ||
+      (status==='cancelled' && rowStatus==='cancelled');
+
+    const show=searchOK && supplierOK && statusOK;
+
+    row.style.display=show?'':'none';
+
+    if(show)visible++;
+  });
+
+  const counter=$('tmOrderCounter');
+
+  if(counter){
+    counter.textContent=
+      visible+' '+(visible===1?'orden':'órdenes');
+  }
+
+  const empty=$('tmOrderEmptyFiltered');
+
+  if(empty){
+    empty.style.display=visible ? 'none' : 'block';
+  }
+}
+
+function cancelOrderForm(id){
+  const o=db.orders.find(x=>x.id===id);
+
+  if(!o)return;
+
+  if(o.saleId){
+    return alert(
+      'Esta OC tiene una factura asociada y no puede cancelarse desde Órdenes de Compra.'
+    );
+  }
+
+  modal(
+    'Cancelar '+o.number,
+    `
+    <div class="tm-cancel-box">
+
+      <div class="tm-cancel-warning">
+        <b>Esta OC no será eliminada.</b><br>
+        Permanecerá disponible para consulta y auditoría,
+        pero dejará de considerarse una orden activa.
+      </div>
+
+      <div class="field">
+        <label>Motivo de cancelación *</label>
+
+        <select id="tmCancelReason">
+          <option value="">Seleccione un motivo</option>
+          <option value="Cliente canceló">Cliente canceló</option>
+          <option value="Tour cancelado por proveedor">Tour cancelado por proveedor</option>
+          <option value="Clima">Clima</option>
+          <option value="Duplicada">Duplicada</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label>Observación</label>
+
+        <textarea
+          id="tmCancelNotes"
+          placeholder="Detalle adicional de la cancelación..."
+          style="min-height:100px"></textarea>
+      </div>
+
+      <div class="actions">
+        <button
+          class="secondary"
+          onclick="closeModal()">
+          Volver
+        </button>
+
+        <button
+          class="primary"
+          style="background:#b42318"
+          onclick="cancelOrder('${id}')">
+          Confirmar cancelación
+        </button>
+      </div>
+
+    </div>
+    `
+  );
+}
+
+async function cancelOrder(id){
+  const reason=$('tmCancelReason')?.value||'';
+  const notes=$('tmCancelNotes')?.value?.trim()||'';
+
+  if(!reason){
+    return alert('Debe seleccionar el motivo de cancelación.');
+  }
+
+  const btn=document.querySelector('.modal .primary');
+
+  if(btn){
+    btn.disabled=true;
+    btn.textContent='Cancelando...';
+  }
+
+  try{
+
+    const r=await fetch(
+      '/api/purchase-orders/'+encodeURIComponent(id)+'/cancel',
+      {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({reason,notes})
+      }
+    );
+
+    const data=await r.json().catch(()=>({}));
+
+    if(!r.ok){
+      throw new Error(
+        data.error||'No fue posible cancelar la OC.'
+      );
+    }
+
+    db=await loadDB();
+
+    closeModal();
+    render();
+
+    alert('OC cancelada correctamente.');
+
+  }catch(e){
+
+    if(btn){
+      btn.disabled=false;
+      btn.textContent='Confirmar cancelación';
+    }
+
+    alert(e.message);
+  }
+}
+
+async function reactivateOrder(id){
+  const o=db.orders.find(x=>x.id===id);
+
+  if(!o)return;
+
+  if(!confirm(
+    '¿Desea reactivar la '+o.number+'?'
+  ))return;
+
+  try{
+
+    const r=await fetch(
+      '/api/purchase-orders/'+encodeURIComponent(id)+'/reactivate',
+      {method:'POST'}
+    );
+
+    const data=await r.json().catch(()=>({}));
+
+    if(!r.ok){
+      throw new Error(
+        data.error||'No fue posible reactivar la OC.'
+      );
+    }
+
+    db=await loadDB();
+
+    render();
+
+    alert('OC reactivada correctamente.');
+
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+async function deleteOrder(id){
+  const o=db.orders.find(x=>x.id===id);
+
+  if(!o)return;
+
+  if(!confirm(
+    '¿Eliminar definitivamente '+o.number+'?\n\n'+
+    'Esta acción no es una cancelación y eliminará la OC de forma permanente.\n\n'+
+    'Para conservar el historial utilice Cancelar OC.'
+  ))return;
+
+  if(!confirm(
+    'Última confirmación:\n\n'+
+    '¿Está seguro de eliminar '+o.number+'?'
+  ))return;
+
+  try{
+
+    const r=await fetch(
+      '/api/purchase-orders/'+encodeURIComponent(id),
+      {method:'DELETE'}
+    );
+
+    const data=await r.json().catch(()=>({}));
+
+    if(!r.ok){
+      throw new Error(
+        data.error||'No fue posible eliminar la OC.'
+      );
+    }
+
+    db.orders=db.orders.filter(x=>x.id!==id);
+
+    render();
+
+    alert(o.number+' eliminada.');
+
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+function orders(){
+
+  if(typeof window.orderStatus==='undefined'){
+    window.orderStatus='active';
+  }
+
+  const sf=window.orderSupplier||'';
+  const q=tmOrderSearchText(window.orderQ||'');
+  const currentStatus=window.orderStatus||'active';
+
+  const rows=db.orders
+    .slice()
+    .sort((a,b)=>
+      String(b.number||'').localeCompare(
+        String(a.number||'')
+      )
+    );
+
+  const canCreate=tmCan('purchase_orders.create');
+  const canEdit=tmCan('purchase_orders.edit');
+  const canDelete=tmCan('purchase_orders.delete');
+
+  const isVisible=o=>{
+
+    const status=o.status||'active';
+
+    const searchText=tmOrderSearchText([
+      o.number,
+      o.op,
+      o.customerName,
+      o.client,
+      o.tour,
+      supplier(o.supplierId),
+      o.seller
+    ].join(' '));
+
+    const searchOK=
+      !q ||
+      searchText.includes(q);
+
+    const supplierOK=
+      !sf ||
+      o.supplierId===sf;
+
+    const statusOK=
+      currentStatus==='all' ||
+      (currentStatus==='active' && status!=='cancelled') ||
+      (currentStatus==='cancelled' && status==='cancelled');
+
+    return searchOK && supplierOK && statusOK;
+  };
+
+  const visibleCount=rows.filter(isVisible).length;
+
+  return `
+  <style>
+
+    .tm-oc-page{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+
+    .tm-oc-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:20px;
+    }
+
+    .tm-oc-header h2{
+      margin:0 0 4px;
+      font-size:27px;
+      color:#263544;
+      letter-spacing:-.4px;
+    }
+
+    .tm-oc-header small{
+      color:#7b8794;
+      font-size:13px;
+    }
+
+    .tm-oc-filter-card{
+      background:#fff;
+      border:1px solid #dfe5ea;
+      border-radius:14px;
+      padding:15px 16px;
+      box-shadow:0 1px 3px rgba(15,23,42,.04);
+    }
+
+    .tm-oc-filter-grid{
+      display:grid;
+      grid-template-columns:minmax(330px,1fr) 240px 190px 100px;
+      gap:12px;
+      align-items:end;
+    }
+
+    .tm-oc-search{
+      position:relative;
+    }
+
+    .tm-oc-search-symbol{
+      position:absolute;
+      left:13px;
+      top:50%;
+      transform:translateY(-50%);
+      color:#93a0ae;
+      font-size:19px;
+      pointer-events:none;
+    }
+
+    .tm-oc-search input{
+      padding-left:40px;
+    }
+
+    .tm-oc-result-count{
+      min-height:42px;
+      display:flex;
+      justify-content:flex-end;
+      align-items:center;
+      color:#718096;
+      font-size:12px;
+      white-space:nowrap;
+    }
+
+    .tm-oc-card{
+      background:#fff;
+      border:1px solid #dfe5ea;
+      border-radius:14px;
+      box-shadow:0 1px 3px rgba(15,23,42,.04);
+      overflow:visible;
+    }
+
+    .tm-oc-table-wrap{
+      width:100%;
+      overflow-x:auto;
+      overflow-y:visible;
+    }
+
+    .tm-oc-table{
+      width:100%;
+      min-width:1060px;
+      border-collapse:separate;
+      border-spacing:0;
+    }
+
+    .tm-oc-table th{
+      padding:12px 14px;
+      background:#f7f9fb;
+      border-bottom:1px solid #e4e9ee;
+      text-align:left;
+      color:#748092;
+      font-size:10px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.045em;
+      white-space:nowrap;
+    }
+
+    .tm-oc-table td{
+      padding:13px 14px;
+      border-bottom:1px solid #edf0f3;
+      vertical-align:middle;
+      color:#334155;
+      font-size:12px;
+    }
+
+    .tm-oc-table tbody tr:last-child td{
+      border-bottom:0;
+    }
+
+    .tm-oc-table tbody tr:hover td{
+      background:#fbfdfd;
+    }
+
+    .tm-oc-number{
+      color:#14877f;
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .tm-oc-operation{
+      margin-top:3px;
+      color:#98a2b3;
+      font-size:10px;
+    }
+
+    .tm-oc-main{
+      color:#2d3c4c;
+      font-weight:700;
+      line-height:1.35;
+    }
+
+    .tm-oc-sub{
+      margin-top:3px;
+      color:#8390a0;
+      font-size:10px;
+      line-height:1.4;
+    }
+
+    .tm-oc-service-info{
+      margin-top:4px;
+      color:#718096;
+      font-size:10px;
+      white-space:nowrap;
+    }
+
+    .tm-oc-total{
+      font-size:13px;
+      font-weight:800;
+      color:#263544;
+      white-space:nowrap;
+    }
+
+    .tm-oc-status-column{
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+      align-items:flex-start;
+    }
+
+    .tm-oc-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:9px;
+      font-weight:800;
+      line-height:1;
+      white-space:nowrap;
+    }
+
+    .tm-oc-pill-active{
+      color:#12756f;
+      background:#e7f6f3;
+    }
+
+    .tm-oc-pill-cancelled{
+      color:#b42318;
+      background:#fef0f0;
+    }
+
+    .tm-oc-pill-paid{
+      color:#067647;
+      background:#ecfdf3;
+    }
+
+    .tm-oc-pill-pending{
+      color:#b45309;
+      background:#fff6e8;
+    }
+
+    .tm-oc-updated{
+      line-height:1.35;
+      white-space:nowrap;
+    }
+
+    .tm-oc-updated b{
+      font-size:10px;
+      color:#596579;
+    }
+
+    .tm-oc-updated small{
+      font-size:9px;
+      color:#98a2b3;
+    }
+
+    .tm-oc-actions{
+      position:relative;
+    }
+
+    .tm-oc-actions details{
+      position:relative;
+    }
+
+    .tm-oc-actions summary{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      list-style:none;
+      min-width:85px;
+      padding:7px 10px;
+      border:1px solid #d7dee5;
+      border-radius:8px;
+      background:#fff;
+      color:#526071;
+      cursor:pointer;
+      font-size:10px;
+      font-weight:750;
+      white-space:nowrap;
+      user-select:none;
+    }
+
+    .tm-oc-actions summary::-webkit-details-marker{
+      display:none;
+    }
+
+    .tm-oc-menu{
+      position:absolute;
+      top:36px;
+      right:0;
+      z-index:200;
+      width:205px;
+      padding:6px;
+      background:#fff;
+      border:1px solid #dce3e9;
+      border-radius:11px;
+      box-shadow:0 15px 35px rgba(15,23,42,.15);
+    }
+
+    .tm-oc-menu button{
+      width:100%;
+      padding:9px 10px;
+      border:0;
+      border-radius:7px;
+      background:transparent;
+      color:#3d4a5c;
+      text-align:left;
+      font-size:11px;
+      cursor:pointer;
+    }
+
+    .tm-oc-menu button:hover{
+      background:#f3f6f8;
+    }
+
+    .tm-oc-menu .tm-action-primary{
+      color:#137f78;
+      font-weight:700;
+    }
+
+    .tm-oc-menu .tm-action-danger{
+      color:#b42318;
+    }
+
+    .tm-oc-empty-filter{
+      display:none;
+      padding:45px 20px;
+      color:#7a8795;
+      text-align:center;
+      font-size:13px;
+    }
+
+    .tm-cancel-box{
+      max-width:620px;
+    }
+
+    .tm-cancel-warning{
+      margin-bottom:18px;
+      padding:14px 16px;
+      border:1px solid #fed7aa;
+      border-radius:11px;
+      background:#fff7ed;
+      color:#9a3412;
+      font-size:12px;
+      line-height:1.5;
+    }
+
+    @media(max-width:1050px){
+      .tm-oc-filter-grid{
+        grid-template-columns:1fr 1fr;
+      }
+
+      .tm-oc-result-count{
+        justify-content:flex-start;
+      }
+    }
+
+    @media(max-width:650px){
+      .tm-oc-header{
+        flex-direction:column;
+      }
+
+      .tm-oc-filter-grid{
+        grid-template-columns:1fr;
+      }
+    }
+
+  </style>
+
+  <div class="tm-oc-page">
+
+    <div class="tm-oc-header">
+
+      <div>
+        <h2>Órdenes de compra</h2>
+
+        <small>
+          Gestione servicios, facturación y estado operativo de cada orden.
+        </small>
+      </div>
+
+      ${
+        canCreate
+        ? `
+          <button
+            class="primary"
+            onclick="orderForm()">
+            + Nueva OC
+          </button>
+        `
+        : ''
+      }
+
+    </div>
+
+    <div class="tm-oc-filter-card">
+
+      <div class="tm-oc-filter-grid">
+
+        <div class="field">
+
+          <label>Buscar orden</label>
+
+          <div class="tm-oc-search">
+
+            <span class="tm-oc-search-symbol">⌕</span>
+
+            <input
+              id="tmOrderSearch"
+              value="${esc(window.orderQ||'')}"
+              oninput="filterOrderRows()"
+              placeholder="OC, operación, cliente, tour, proveedor o vendedor..."
+              autocomplete="off">
+
+          </div>
+
+        </div>
+
+        <div class="field">
+
+          <label>Proveedor</label>
+
+          <select
+            id="tmOrderSupplier"
+            onchange="filterOrderRows()">
+
+            <option value="">
+              Todos los proveedores
+            </option>
+
+            ${
+              db.suppliers.map(s=>`
+                <option
+                  value="${s.id}"
+                  ${sf===s.id?'selected':''}>
+                  ${esc(s.name)}
+                </option>
+              `).join('')
+            }
+
+          </select>
+
+        </div>
+
+        <div class="field">
+
+          <label>Estado de OC</label>
+
+          <select
+            id="tmOrderStatus"
+            onchange="filterOrderRows()">
+
+            <option
+              value="active"
+              ${currentStatus==='active'?'selected':''}>
+              Activas
+            </option>
+
+            <option
+              value="cancelled"
+              ${currentStatus==='cancelled'?'selected':''}>
+              Canceladas
+            </option>
+
+            <option
+              value="all"
+              ${currentStatus==='all'?'selected':''}>
+              Todas
+            </option>
+
+          </select>
+
+        </div>
+
+        <div
+          id="tmOrderCounter"
+          class="tm-oc-result-count">
+
+          ${visibleCount}
+          ${visibleCount===1?'orden':'órdenes'}
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="tm-oc-card">
+
+      ${
+        rows.length
+        ? `
+          <div class="tm-oc-table-wrap">
+
+            <table class="tm-oc-table">
+
+              <thead>
+                <tr>
+                  <th>OC / Operación</th>
+                  <th>Cliente</th>
+                  <th>Servicio</th>
+                  <th>Proveedor</th>
+                  <th>Total</th>
+                  <th>Estado</th>
+                  <th>Modificación</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody>
+
+                ${
+                  rows.map(o=>{
+
+                    const status=o.status||'active';
+                    const cancelled=status==='cancelled';
+
+                    const searchText=tmOrderSearchText([
+                      o.number,
+                      o.op,
+                      o.customerName,
+                      o.client,
+                      o.tour,
+                      supplier(o.supplierId),
+                      o.seller
+                    ].join(' '));
+
+                    const initiallyVisible=isVisible(o);
+
+                    return `
+                      <tr
+                        class="tm-oc-row"
+                        data-search="${esc(searchText)}"
+                        data-supplier="${esc(o.supplierId||'')}"
+                        data-status="${esc(status)}"
+                        style="${initiallyVisible?'':'display:none'}">
+
+                        <td>
+
+                          <div class="tm-oc-number">
+                            ${esc(o.number)}
+                          </div>
+
+                          <div class="tm-oc-operation">
+                            ${esc(o.op||'')}
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-main">
+                            ${esc(o.customerName)}
+                          </div>
+
+                          <div class="tm-oc-sub">
+                            ${esc(o.seller||'Sin vendedor')}
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-main">
+                            ${esc(o.tour)}
+                          </div>
+
+                          <div class="tm-oc-service-info">
+                            ${displayServiceDate(o.serviceDate)}
+                            · ${formatServiceTime(o.time)}
+                            · ${Number(o.pax||0)} pax
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-main">
+                            ${esc(supplier(o.supplierId))}
+                          </div>
+
+                          ${
+                            o.place
+                            ? `
+                              <div class="tm-oc-sub">
+                                Pickup: ${esc(o.place)}
+                              </div>
+                            `
+                            : ''
+                          }
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-total">
+                            ${money(o.total)}
+                          </div>
+
+                          <div class="tm-oc-sub">
+                            ${esc(o.currency||'USD')}
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-status-column">
+
+                            <span
+                              class="tm-oc-pill ${
+                                cancelled
+                                ? 'tm-oc-pill-cancelled'
+                                : 'tm-oc-pill-active'
+                              }"
+                              ${
+                                cancelled && o.cancellationReason
+                                ? `title="${esc(o.cancellationReason)}"`
+                                : ''
+                              }>
+
+                              ${
+                                cancelled
+                                ? '● Cancelada'
+                                : '● Activa'
+                              }
+
+                            </span>
+
+                            ${
+                              !cancelled
+                              ? `
+                                <span class="tm-oc-pill ${
+                                  o.paymentStatus==='Pagado'
+                                  ? 'tm-oc-pill-paid'
+                                  : 'tm-oc-pill-pending'
+                                }">
+
+                                  ${
+                                    o.paymentStatus==='Pagado'
+                                    ? '✓ Pagado'
+                                    : 'Pendiente'
+                                  }
+
+                                </span>
+                              `
+                              : ''
+                            }
+
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          ${
+                            o.updatedAt
+                            ? `
+                              <div class="tm-oc-updated">
+
+                                <b>
+                                  ${esc(o.updatedByUser||'Usuario')}
+                                </b>
+
+                                <br>
+
+                                <small>
+                                  ${displayDateTime(o.updatedAt)}
+                                </small>
+
+                              </div>
+                            `
+                            : `
+                              <span style="color:#98a2b3;font-size:10px">
+                                Sin registro
+                              </span>
+                            `
+                          }
+
+                        </td>
+
+                        <td>
+
+                          <div class="tm-oc-actions">
+
+                            <details>
+
+                              <summary>
+                                Acciones ▾
+                              </summary>
+
+                              <div class="tm-oc-menu">
+
+                                <button
+                                  onclick="previewOrder('${o.id}')">
+                                  Vista previa
+                                </button>
+
+                                ${
+                                  canEdit && !cancelled
+                                  ? `
+                                    <button
+                                      onclick="orderForm('${o.id}')">
+                                      Editar OC
+                                    </button>
+                                  `
+                                  : ''
+                                }
+
+                                ${
+                                  o.saleId
+                                  ? `
+                                    <button
+                                      onclick="previewSale('${o.saleId}')">
+                                      Ver factura
+                                    </button>
+                                  `
+                                  : (
+                                      !cancelled
+                                      ? `
+                                        <button
+                                          class="tm-action-primary"
+                                          onclick="saleForm('${o.id}')">
+                                          Generar factura
+                                        </button>
+                                      `
+                                      : ''
+                                    )
+                                }
+
+                                ${
+                                  canEdit && !cancelled && !o.saleId
+                                  ? `
+                                    <button
+                                      class="tm-action-danger"
+                                      onclick="cancelOrderForm('${o.id}')">
+                                      Cancelar OC
+                                    </button>
+                                  `
+                                  : ''
+                                }
+
+                                ${
+                                  canEdit && cancelled
+                                  ? `
+                                    <button
+                                      class="tm-action-primary"
+                                      onclick="reactivateOrder('${o.id}')">
+                                      Reactivar OC
+                                    </button>
+                                  `
+                                  : ''
+                                }
+
+                                ${
+                                  canDelete
+                                  ? `
+                                    <button
+                                      class="tm-action-danger"
+                                      onclick="deleteOrder('${o.id}')">
+                                      Eliminar definitivamente
+                                    </button>
+                                  `
+                                  : ''
+                                }
+
+                              </div>
+
+                            </details>
+
+                          </div>
+
+                        </td>
+
+                      </tr>
+                    `;
+
+                  }).join('')
+                }
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+          <div
+            id="tmOrderEmptyFiltered"
+            class="tm-oc-empty-filter"
+            style="${visibleCount?'display:none':'display:block'}">
+
+            No se encontraron órdenes con estos filtros.
+
+          </div>
+        `
+        : `
+          <div class="empty">
+            No hay órdenes de compra.
+          </div>
+        `
+      }
+
+    </div>
+
+  </div>
+  `;
+}
 
 
 function displayDateTime(value){
@@ -1234,42 +2298,889 @@ function timeTo24(){
 }
 
 function orderForm(id=null){
- if(!db.clients.length||!db.tours.length||!db.suppliers.length||!db.sellers.length)return alert('Primero cree cliente, tour, proveedor y vendedor.');
- const o=id?db.orders.find(x=>x.id===id):null;
- window.tmEditingOrder=!!o;
- modal(o?'Editar OC':'Nueva OC',`<div class="grid">
- <div class="field"><label>Cliente / cuenta</label><select id="ocClient">${db.clients.map(c=>`<option value="${c.id}" ${c.id===o?.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
- <div class="field"><label>Nombre del Cliente / pasajero *</label><input id="ocPassenger" value="${esc(o?.customerName||'')}"></div>
- <div class="field"><label>Tour</label><select id="ocTour" onchange="orderCostFromTour()">${db.tours.map(t=>`<option value="${t.id}" ${t.id===o?.tourId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
- <div class="field"><label>Proveedor</label><select id="ocSupplier">${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===o?.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
- <div class="field"><label>Vendedor *</label><select id="ocSeller"><option value="">Seleccione un vendedor</option>${db.sellers.map(s=>`<option value="${s.id}" ${s.id===o?.sellerId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
- <div class="field"><label>Fecha de emisión</label><input id="ocIssue" type="date" value="${dateOnly(o?.issueDate)||localDate()}"></div>
- <div class="field"><label>Fecha de servicio *</label><input id="ocService" type="date" value="${dateOnly(o?.serviceDate)||''}" onchange="orderCostFromTour()"></div>
- <div class="field">
-<label>Hora del servicio / Pickup</label>
-<div style="display:flex;gap:8px;align-items:center">
- <select id="ocHour" style="flex:1">
-  ${(()=>{const tp=timeParts(o?.time||'');return Array.from({length:12},(_,i)=>{const h=String(i+1).padStart(2,'0');return `<option value="${h}" ${tp.hour===h?'selected':''}>${h}</option>`}).join('')})()}
- </select>
- <span>:</span>
- <input id="ocMinute" type="number" min="0" max="59" step="1" style="width:90px" value="${timeParts(o?.time||'').minute||'00'}" placeholder="00">
- <select id="ocAmPm" style="width:100px">
-  <option value="AM" ${timeParts(o?.time||'').ampm==='AM'?'selected':''}>AM</option>
-  <option value="PM" ${timeParts(o?.time||'').ampm==='PM'?'selected':''}>PM</option>
- </select>
-</div>
-</div>
- <div class="field"><label>Pickup</label><input id="ocPlace" value="${esc(o?.place||'')}"></div>
- <div class="field"><label>Drop Off</label><input id="ocDropOff" value="${esc(o?.dropOff||'')}"></div>
- <div class="field"><label>Pasajeros</label><input id="ocPax" type="number" min="1" value="${o?.pax||1}" oninput="orderCalc()"></div>
- <div class="field"><label>Costo unitario</label><input id="ocCost" type="number" step=".01" value="${o?.unitCost??(db.tours.find(t=>t.id===o?.tourId)||db.tours[0]).cost}" oninput="orderCalc()"><small id="tm-oc-rate-info" style="display:block;margin-top:7px;color:#64748b"></small></div>
- <div class="field"><label>Moneda</label><select id="ocCurrency"><option ${o?.currency!=='CRC'?'selected':''}>USD</option><option ${o?.currency==='CRC'?'selected':''}>CRC</option></select></div>
- <div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="ocTaxApply" type="checkbox" ${o?.taxRate===0?'':'checked'} onchange="orderCalc()"> Aplicar IVA 13%</label></div>
- <div class="field full"><label>Observaciones</label><textarea id="ocNotes">${esc(o?.notes||'')}</textarea></div>
- <div class="card full">Subtotal: <b id="ocSub"></b> · IVA 13%: <b id="ocTax"></b> · TOTAL: <b id="ocTotal"></b></div></div>
- <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="${o?`saveOrder('${id}')`:'createOrder()'}">Guardar OC</button></div>`);
- orderCalc()
+
+  if(
+    !db.clients.length ||
+    !db.tours.length ||
+    !db.suppliers.length ||
+    !db.sellers.length
+  ){
+    return alert(
+      'Primero cree cliente, tour, proveedor y vendedor.'
+    );
+  }
+
+  const o=id
+    ? db.orders.find(x=>x.id===id)
+    : null;
+
+  window.tmEditingOrder=!!o;
+
+  const tp=timeParts(o?.time||'');
+
+  const defaultTour=
+    db.tours.find(t=>t.id===o?.tourId) ||
+    db.tours[0];
+
+  const initialCost=
+    o?.unitCost ??
+    defaultTour?.cost ??
+    0;
+
+  modal(
+    o ? 'Editar '+o.number : 'Nueva orden de compra',
+    `
+    <style>
+
+      #modalBox:has(.tm-oc-form){
+        width:min(1080px,94vw);
+        max-width:1080px;
+      }
+
+      .tm-oc-form{
+        margin-top:4px;
+      }
+
+      .tm-oc-form-head{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:16px;
+        margin:-4px 0 18px;
+        padding-bottom:14px;
+        border-bottom:1px solid #e7ebef;
+      }
+
+      .tm-oc-form-head-text{
+        color:#778394;
+        font-size:12px;
+        line-height:1.45;
+      }
+
+      .tm-oc-form-tag{
+        display:inline-flex;
+        align-items:center;
+        padding:6px 10px;
+        border-radius:999px;
+        background:#e8f6f3;
+        color:#137f78;
+        font-size:10px;
+        font-weight:800;
+        white-space:nowrap;
+      }
+
+      .tm-oc-sections{
+        display:grid;
+        grid-template-columns:minmax(0,1.6fr) minmax(300px,.85fr);
+        gap:16px;
+        align-items:start;
+      }
+
+      .tm-oc-left{
+        display:flex;
+        flex-direction:column;
+        gap:14px;
+      }
+
+      .tm-oc-form-card{
+        border:1px solid #e1e6eb;
+        border-radius:13px;
+        background:#fff;
+        overflow:hidden;
+      }
+
+      .tm-oc-form-card-head{
+        display:flex;
+        align-items:center;
+        gap:10px;
+        padding:12px 15px;
+        background:#f8fafb;
+        border-bottom:1px solid #e6eaee;
+      }
+
+      .tm-oc-form-card-icon{
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        width:27px;
+        height:27px;
+        border-radius:8px;
+        background:#e8f5f3;
+        color:#137f78;
+        font-size:13px;
+        font-weight:900;
+      }
+
+      .tm-oc-form-card-title{
+        color:#334155;
+        font-size:12px;
+        font-weight:800;
+      }
+
+      .tm-oc-form-card-subtitle{
+        margin-top:1px;
+        color:#94a3b8;
+        font-size:9px;
+      }
+
+      .tm-oc-form-card-body{
+        padding:15px;
+      }
+
+      .tm-oc-grid-2{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:13px 14px;
+      }
+
+      .tm-oc-grid-3{
+        display:grid;
+        grid-template-columns:1fr 1fr 150px;
+        gap:13px 14px;
+      }
+
+      .tm-oc-form .field{
+        min-width:0;
+      }
+
+      .tm-oc-form .field label{
+        margin-bottom:6px;
+        color:#5c6878;
+        font-size:10px;
+        font-weight:750;
+      }
+
+      .tm-oc-required{
+        color:#b42318;
+      }
+
+      .tm-oc-time{
+        display:grid;
+        grid-template-columns:1fr 12px 90px 90px;
+        gap:7px;
+        align-items:center;
+      }
+
+      .tm-oc-time-separator{
+        color:#94a3b8;
+        text-align:center;
+        font-weight:800;
+      }
+
+      .tm-oc-rate-info{
+        display:block;
+        margin-top:6px;
+        min-height:14px;
+        color:#64748b;
+        font-size:9px;
+        line-height:1.4;
+      }
+
+      .tm-oc-tax-box{
+        min-height:42px;
+        display:flex;
+        align-items:center;
+        padding:0 12px;
+        border:1px solid #dbe2e8;
+        border-radius:8px;
+        background:#fafcfc;
+      }
+
+      .tm-oc-tax-box label{
+        display:flex !important;
+        align-items:center;
+        gap:8px;
+        margin:0 !important;
+        cursor:pointer;
+      }
+
+      .tm-oc-tax-box input{
+        width:auto;
+        margin:0;
+      }
+
+      .tm-oc-summary{
+        position:sticky;
+        top:10px;
+        border:1px solid #dce5e5;
+        border-radius:14px;
+        background:#fbfdfd;
+        overflow:hidden;
+      }
+
+      .tm-oc-summary-head{
+        padding:15px 16px;
+        background:#edf7f5;
+        border-bottom:1px solid #dce9e6;
+      }
+
+      .tm-oc-summary-head b{
+        display:block;
+        color:#176e69;
+        font-size:13px;
+      }
+
+      .tm-oc-summary-head small{
+        display:block;
+        margin-top:3px;
+        color:#6e8582;
+        font-size:9px;
+      }
+
+      .tm-oc-summary-body{
+        padding:17px 16px;
+      }
+
+      .tm-oc-summary-line{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:15px;
+        padding:9px 0;
+        color:#64748b;
+        font-size:11px;
+        border-bottom:1px solid #edf1f2;
+      }
+
+      .tm-oc-summary-line b{
+        color:#334155;
+        font-size:12px;
+      }
+
+      .tm-oc-summary-total{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-end;
+        gap:12px;
+        padding-top:17px;
+      }
+
+      .tm-oc-summary-total span{
+        color:#475569;
+        font-size:11px;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.04em;
+      }
+
+      .tm-oc-summary-total b{
+        color:#137f78;
+        font-size:24px;
+        letter-spacing:-.5px;
+      }
+
+      .tm-oc-summary-note{
+        margin-top:15px;
+        padding:10px 11px;
+        border-radius:9px;
+        background:#fff;
+        border:1px solid #e5eaed;
+        color:#83909e;
+        font-size:9px;
+        line-height:1.5;
+      }
+
+      .tm-oc-notes textarea{
+        min-height:80px;
+        resize:vertical;
+      }
+
+      .tm-oc-form-actions{
+        display:flex;
+        justify-content:flex-end;
+        gap:9px;
+        margin-top:17px;
+        padding-top:15px;
+        border-top:1px solid #e7ebef;
+      }
+
+      .tm-oc-form-actions button{
+        min-width:120px;
+      }
+
+      @media(max-width:850px){
+
+        #modalBox:has(.tm-oc-form){
+          width:94vw;
+        }
+
+        .tm-oc-sections{
+          grid-template-columns:1fr;
+        }
+
+        .tm-oc-summary{
+          position:static;
+        }
+
+      }
+
+      @media(max-width:650px){
+
+        .tm-oc-grid-2,
+        .tm-oc-grid-3{
+          grid-template-columns:1fr;
+        }
+
+        .tm-oc-time{
+          grid-template-columns:1fr 10px 75px 80px;
+        }
+
+        .tm-oc-form-head{
+          align-items:flex-start;
+          flex-direction:column;
+        }
+
+      }
+
+    </style>
+
+    <div class="tm-oc-form">
+
+      <div class="tm-oc-form-head">
+
+        <div class="tm-oc-form-head-text">
+          ${
+            o
+            ? `
+              Modifique la información necesaria.
+              Los cambios quedarán registrados en la auditoría de la OC.
+            `
+            : `
+              Complete los datos del servicio.
+              El número de OC y la operación se asignarán automáticamente.
+            `
+          }
+        </div>
+
+        <span class="tm-oc-form-tag">
+          ${o ? esc(o.number) : 'Nueva OC'}
+        </span>
+
+      </div>
+
+      <div class="tm-oc-sections">
+
+        <div class="tm-oc-left">
+
+          <div class="tm-oc-form-card">
+
+            <div class="tm-oc-form-card-head">
+
+              <div class="tm-oc-form-card-icon">
+                01
+              </div>
+
+              <div>
+                <div class="tm-oc-form-card-title">
+                  Cliente y servicio
+                </div>
+
+                <div class="tm-oc-form-card-subtitle">
+                  Información principal de la reservación
+                </div>
+              </div>
+
+            </div>
+
+            <div class="tm-oc-form-card-body">
+
+              <div class="tm-oc-grid-2">
+
+                <div class="field">
+
+                  <label>
+                    Cliente / cuenta
+                  </label>
+
+                  <select id="ocClient">
+                    ${
+                      db.clients.map(c=>`
+                        <option
+                          value="${c.id}"
+                          ${c.id===o?.clientId?'selected':''}>
+                          ${esc(c.name)}
+                        </option>
+                      `).join('')
+                    }
+                  </select>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Nombre del cliente / pasajero
+                    <span class="tm-oc-required">*</span>
+                  </label>
+
+                  <input
+                    id="ocPassenger"
+                    value="${esc(o?.customerName||'')}"
+                    placeholder="Nombre del pasajero">
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Tour
+                  </label>
+
+                  <select
+                    id="ocTour"
+                    onchange="orderCostFromTour()">
+
+                    ${
+                      db.tours.map(t=>`
+                        <option
+                          value="${t.id}"
+                          ${t.id===o?.tourId?'selected':''}>
+                          ${esc(t.name)}
+                        </option>
+                      `).join('')
+                    }
+
+                  </select>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Proveedor
+                  </label>
+
+                  <select id="ocSupplier">
+
+                    ${
+                      db.suppliers.map(s=>`
+                        <option
+                          value="${s.id}"
+                          ${s.id===o?.supplierId?'selected':''}>
+                          ${esc(s.name)}
+                        </option>
+                      `).join('')
+                    }
+
+                  </select>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Vendedor
+                    <span class="tm-oc-required">*</span>
+                  </label>
+
+                  <select id="ocSeller">
+
+                    <option value="">
+                      Seleccione un vendedor
+                    </option>
+
+                    ${
+                      db.sellers.map(s=>`
+                        <option
+                          value="${s.id}"
+                          ${s.id===o?.sellerId?'selected':''}>
+                          ${esc(s.name)}
+                        </option>
+                      `).join('')
+                    }
+
+                  </select>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Fecha de emisión
+                  </label>
+
+                  <input
+                    id="ocIssue"
+                    type="date"
+                    value="${dateOnly(o?.issueDate)||localDate()}">
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div class="tm-oc-form-card">
+
+            <div class="tm-oc-form-card-head">
+
+              <div class="tm-oc-form-card-icon">
+                02
+              </div>
+
+              <div>
+                <div class="tm-oc-form-card-title">
+                  Fecha y logística
+                </div>
+
+                <div class="tm-oc-form-card-subtitle">
+                  Programación, transporte y pasajeros
+                </div>
+              </div>
+
+            </div>
+
+            <div class="tm-oc-form-card-body">
+
+              <div class="tm-oc-grid-2">
+
+                <div class="field">
+
+                  <label>
+                    Fecha de servicio
+                    <span class="tm-oc-required">*</span>
+                  </label>
+
+                  <input
+                    id="ocService"
+                    type="date"
+                    value="${dateOnly(o?.serviceDate)||''}"
+                    onchange="orderCostFromTour()">
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Hora del servicio / Pickup
+                  </label>
+
+                  <div class="tm-oc-time">
+
+                    <select id="ocHour">
+
+                      ${
+                        Array.from(
+                          {length:12},
+                          (_,i)=>{
+                            const h=String(i+1).padStart(2,'0');
+
+                            return `
+                              <option
+                                value="${h}"
+                                ${tp.hour===h?'selected':''}>
+                                ${h}
+                              </option>
+                            `;
+                          }
+                        ).join('')
+                      }
+
+                    </select>
+
+                    <span class="tm-oc-time-separator">
+                      :
+                    </span>
+
+                    <input
+                      id="ocMinute"
+                      type="number"
+                      min="0"
+                      max="59"
+                      step="1"
+                      value="${tp.minute||'00'}"
+                      placeholder="00">
+
+                    <select id="ocAmPm">
+
+                      <option
+                        value="AM"
+                        ${tp.ampm==='AM'?'selected':''}>
+                        AM
+                      </option>
+
+                      <option
+                        value="PM"
+                        ${tp.ampm==='PM'?'selected':''}>
+                        PM
+                      </option>
+
+                    </select>
+
+                  </div>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Pickup
+                  </label>
+
+                  <input
+                    id="ocPlace"
+                    value="${esc(o?.place||'')}"
+                    placeholder="Lugar de recogida">
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Drop Off
+                  </label>
+
+                  <input
+                    id="ocDropOff"
+                    value="${esc(o?.dropOff||'')}"
+                    placeholder="Lugar de destino">
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Pasajeros
+                  </label>
+
+                  <input
+                    id="ocPax"
+                    type="number"
+                    min="1"
+                    value="${o?.pax||1}"
+                    oninput="orderCalc()">
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div class="tm-oc-form-card">
+
+            <div class="tm-oc-form-card-head">
+
+              <div class="tm-oc-form-card-icon">
+                03
+              </div>
+
+              <div>
+                <div class="tm-oc-form-card-title">
+                  Costo y facturación
+                </div>
+
+                <div class="tm-oc-form-card-subtitle">
+                  Tarifa del proveedor e impuestos
+                </div>
+              </div>
+
+            </div>
+
+            <div class="tm-oc-form-card-body">
+
+              <div class="tm-oc-grid-3">
+
+                <div class="field">
+
+                  <label>
+                    Costo unitario
+                  </label>
+
+                  <input
+                    id="ocCost"
+                    type="number"
+                    step=".01"
+                    value="${initialCost}"
+                    oninput="orderCalc()">
+
+                  <small
+                    id="tm-oc-rate-info"
+                    class="tm-oc-rate-info">
+                  </small>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Moneda
+                  </label>
+
+                  <select id="ocCurrency">
+
+                    <option
+                      ${o?.currency!=='CRC'?'selected':''}>
+                      USD
+                    </option>
+
+                    <option
+                      ${o?.currency==='CRC'?'selected':''}>
+                      CRC
+                    </option>
+
+                  </select>
+
+                </div>
+
+                <div class="field">
+
+                  <label>
+                    Impuesto
+                  </label>
+
+                  <div class="tm-oc-tax-box">
+
+                    <label>
+
+                      <input
+                        id="ocTaxApply"
+                        type="checkbox"
+                        ${o?.taxRate===0?'':'checked'}
+                        onchange="orderCalc()">
+
+                      Aplicar IVA 13%
+
+                    </label>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              <div
+                class="field tm-oc-notes"
+                style="margin-top:14px">
+
+                <label>
+                  Observaciones
+                </label>
+
+                <textarea
+                  id="ocNotes"
+                  placeholder="Información adicional para la orden...">${esc(o?.notes||'')}</textarea>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="tm-oc-summary">
+
+          <div class="tm-oc-summary-head">
+
+            <b>
+              Resumen de la OC
+            </b>
+
+            <small>
+              Cálculo automático según pasajeros y costo
+            </small>
+
+          </div>
+
+          <div class="tm-oc-summary-body">
+
+            <div class="tm-oc-summary-line">
+
+              <span>
+                Subtotal
+              </span>
+
+              <b id="ocSub">
+                $0.00
+              </b>
+
+            </div>
+
+            <div class="tm-oc-summary-line">
+
+              <span>
+                IVA 13%
+              </span>
+
+              <b id="ocTax">
+                $0.00
+              </b>
+
+            </div>
+
+            <div class="tm-oc-summary-total">
+
+              <span>
+                Total
+              </span>
+
+              <b id="ocTotal">
+                $0.00
+              </b>
+
+            </div>
+
+            <div class="tm-oc-summary-note">
+              ${
+                o
+                ? `
+                  Está editando <b>${esc(o.number)}</b>.
+                  El costo existente no será sustituido automáticamente
+                  por una tarifa nueva.
+                `
+                : `
+                  Al seleccionar el tour y la fecha del servicio,
+                  el sistema buscará automáticamente la tarifa vigente.
+                `
+              }
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="tm-oc-form-actions">
+
+        <button
+          class="secondary"
+          onclick="closeModal()">
+          Cancelar
+        </button>
+
+        <button
+          class="primary"
+          onclick="${
+            o
+            ? `saveOrder('${id}')`
+            : 'createOrder()'
+          }">
+          ${o ? 'Guardar cambios' : 'Crear orden de compra'}
+        </button>
+
+      </div>
+
+    </div>
+    `
+  );
+
+  orderCalc();
+
+  if(!o){
+    orderCostFromTour();
+  }
 }
+
+
 async function orderCostFromTour(){
 
  const tourId=$('ocTour')?.value||'';
@@ -2374,6 +4285,12 @@ function createSale(orderId){
 
  if(!o)return;
 
+ if((o.status||'active')==='cancelled'){
+   return alert(
+     'Esta OC está cancelada. Debe reactivarla antes de generar una factura.'
+   );
+ }
+
  const price=+$('salePrice').value||0;
  const dp=+$('saleDiscount').value||0;
  const paymentMethod=$('salePaymentMethod')?.value||'';
@@ -2770,6 +4687,15 @@ function reports(){return `
       </select>
     </div>
 
+    <div class="field">
+      <label>Estado OC</label>
+      <select id="rFutureOrderStatus">
+        <option value="active">Activas</option>
+        <option value="cancelled">Canceladas</option>
+        <option value="all">Todas</option>
+      </select>
+    </div>
+
     <button class="secondary" onclick="renderReports()">Actualizar</button>
     <button class="secondary" onclick="clearFutureFilters()">Limpiar filtros</button>
     <button class="secondary" onclick="exportFuture()">Excel</button>
@@ -2906,92 +4832,209 @@ function reportSaleForOrder(o){
 }
 
 function reportRows(){
+
   const f=$('rFutureFrom')?.value||'';
   const t=$('rFutureTo')?.value||'';
   const status=$('rFutureStatus')?.value||'';
   const sellerId=$('rFutureSeller')?.value||'';
   const supplierId=$('rFutureSupplier')?.value||'';
   const tourId=$('rFutureTour')?.value||'';
+  const orderStatus=$('rFutureOrderStatus')?.value||'active';
 
   return db.orders.filter(o=>{
+
     const d=dateOnly(o.serviceDate);
+    const ocStatus=o.status||'active';
+    const cancelled=ocStatus==='cancelled';
     const sale=reportSaleForOrder(o);
     const paid=!!sale;
 
+    const orderStatusMatch=
+      orderStatus==='all' ||
+      ocStatus===orderStatus;
+
+    const paymentMatch=
+      !status ||
+      (status==='paid' && paid && !cancelled) ||
+      (status==='pending' && !paid && !cancelled);
+
     return (!f||d>=f)
       &&(!t||d<=t)
-      &&(!status||(status==='paid'?paid:!paid))
+      &&orderStatusMatch
+      &&paymentMatch
       &&(!sellerId||o.sellerId===sellerId)
       &&(!supplierId||o.supplierId===supplierId)
       &&(!tourId||o.tourId===tourId);
+
   }).sort((a,b)=>
     (dateOnly(a.serviceDate)+(a.time||'')).localeCompare(
       dateOnly(b.serviceDate)+(b.time||'')
     )
   );
+
 }
 
 function clearFutureFilters(){
-  ['rFutureFrom','rFutureTo','rFutureStatus','rFutureSeller','rFutureSupplier','rFutureTour']
-    .forEach(id=>{if($(id))$(id).value='';});
+
+  [
+    'rFutureFrom',
+    'rFutureTo',
+    'rFutureStatus',
+    'rFutureSeller',
+    'rFutureSupplier',
+    'rFutureTour'
+  ].forEach(id=>{
+    if($(id))$(id).value='';
+  });
+
+  if($('rFutureOrderStatus')){
+    $('rFutureOrderStatus').value='active';
+  }
+
   renderReports();
+
 }
 
 function sellerReportRows(){
+
   const f=$('rSellerFrom')?.value||'';
   const t=$('rSellerTo')?.value||'';
   const sv=$('rSeller')?.value||'';
   const sort=$('rSellerSort')?.value||'serviceDate';
   const direction=$('rSellerDirection')?.value||'asc';
 
-  const rows=db.sales.filter(s=>{
-    const d=dateOnly(s.serviceDate);
-    return (!f||d>=f)&&(!t||d<=t)&&(!sv||s.sellerId===sv);
-  }).map(s=>{
-    const o=db.orders.find(x=>x.id===s.orderId);
-    const cost=Number(o?.subtotal||0);
-    const sale=Number(s.subtotal||0)-Number(s.discountAmount||0);
-    const margin=sale-cost;
-    const rate=Number(db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0);
-    const commission=Math.max(0,margin)*rate/100;
+  const rows=db.sales
+    .map(s=>{
 
-    return {s,o,cost,sale,margin,rate,commission};
-  });
+      const o=db.orders.find(x=>x.id===s.orderId);
+
+      const cost=Number(o?.subtotal||0);
+      const sale=
+        Number(s.subtotal||0)-
+        Number(s.discountAmount||0);
+
+      const margin=sale-cost;
+
+      const rate=Number(
+        db.sellers.find(
+          x=>x.id===s.sellerId
+        )?.commissionRate||0
+      );
+
+      const commission=
+        Math.max(0,margin)*rate/100;
+
+      return {
+        s,
+        o,
+        cost,
+        sale,
+        margin,
+        rate,
+        commission
+      };
+
+    })
+    .filter(r=>{
+
+      const d=dateOnly(r.s.serviceDate);
+
+      const activeOrder=
+        !r.o ||
+        (r.o.status||'active')!=='cancelled';
+
+      return activeOrder
+        &&(!f||d>=f)
+        &&(!t||d<=t)
+        &&(!sv||r.s.sellerId===sv);
+
+    });
 
   const compare=(a,b)=>{
+
     let av='',bv='';
 
     if(sort==='oc'){
-      const an=Number(String(a.o?.number||'').replace(/\D/g,''))||0;
-      const bn=Number(String(b.o?.number||'').replace(/\D/g,''))||0;
-      if(an!==bn)return direction==='asc'?an-bn:bn-an;
+
+      const an=Number(
+        String(a.o?.number||'').replace(/\D/g,'')
+      )||0;
+
+      const bn=Number(
+        String(b.o?.number||'').replace(/\D/g,'')
+      )||0;
+
+      if(an!==bn){
+        return direction==='asc'
+          ?an-bn
+          :bn-an;
+      }
+
       av=String(a.o?.number||'');
       bv=String(b.o?.number||'');
+
     }else if(sort==='seller'){
+
       av=String(a.s.seller||'').toLowerCase();
       bv=String(b.s.seller||'').toLowerCase();
+
     }else if(sort==='client'){
+
       av=String(a.s.customerName||'').toLowerCase();
       bv=String(b.s.customerName||'').toLowerCase();
+
     }else{
-      av=dateOnly(a.s.serviceDate)+(a.o?.time||'');
-      bv=dateOnly(b.s.serviceDate)+(b.o?.time||'');
+
+      av=
+        dateOnly(a.s.serviceDate)+
+        (a.o?.time||'');
+
+      bv=
+        dateOnly(b.s.serviceDate)+
+        (b.o?.time||'');
+
     }
 
-    const result=av.localeCompare(bv,undefined,{numeric:true,sensitivity:'base'});
-    return direction==='asc'?result:-result;
+    const result=av.localeCompare(
+      bv,
+      undefined,
+      {
+        numeric:true,
+        sensitivity:'base'
+      }
+    );
+
+    return direction==='asc'
+      ?result
+      :-result;
+
   };
 
   return rows.sort(compare);
+
 }
 
 function renderReports(){
   if(!$('futureResult'))return;
 
   const future=reportRows();
-  const paidCount=future.filter(o=>!!reportSaleForOrder(o)).length;
-  const pendingCount=future.length-paidCount;
-  const paxTotal=future.reduce((a,o)=>a+Number(o.pax||0),0);
+
+  const activeFuture=future.filter(
+    o=>(o.status||'active')!=='cancelled'
+  );
+
+  const paidCount=activeFuture.filter(
+    o=>!!reportSaleForOrder(o)
+  ).length;
+
+  const pendingCount=activeFuture.filter(
+    o=>!reportSaleForOrder(o)
+  ).length;
+
+  const paxTotal=future.reduce(
+    (a,o)=>a+Number(o.pax||0),
+    0
+  );
 
   $('futureSummary').innerHTML=`
     <div class="cards" style="grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 14px">
@@ -3027,7 +5070,12 @@ function renderReports(){
 
         ${future.map(o=>{
           const sale=reportSaleForOrder(o);
-          const paid=!!sale;
+
+          const cancelled=
+            (o.status||'active')==='cancelled';
+
+          const paid=
+            !!sale && !cancelled;
 
           return `<tr>
             <td>
@@ -3051,10 +5099,18 @@ function renderReports(){
             </td>
 
             <td>
-              ${paid
-                ?`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:700">Cobrado</span>
-                   <div style="font-size:12px;color:#64748b;margin-top:5px">${esc(sale.number||'Factura')} · ${esc(sale.paymentMethod||'No registrado')}</div>`
-                :`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:12px;font-weight:700">Pendiente</span>`
+              ${cancelled
+
+                ?`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700">Cancelada</span>
+                   <div style="font-size:12px;color:#64748b;margin-top:5px">${esc(o.cancellationReason||'Sin motivo registrado')}</div>`
+
+                :paid
+
+                  ?`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:700">Cobrado</span>
+                     <div style="font-size:12px;color:#64748b;margin-top:5px">${esc(sale.number||'Factura')} · ${esc(sale.paymentMethod||'No registrado')}</div>`
+
+                  :`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:12px;font-weight:700">Pendiente</span>`
+
               }
             </td>
 
@@ -3160,7 +5216,12 @@ function renderReports(){
 
   const base=db.orders.filter(o=>{
     const d=dateOnly(o.serviceDate);
-    return (!af||d>=af)&&(!at||d<=at);
+    const active=
+      (o.status||'active')!=='cancelled';
+
+    return active
+      &&(!af||d>=af)
+      &&(!at||d<=at);
   }),map={};
 
   base.forEach(o=>{
@@ -3232,10 +5293,16 @@ function renderReports(){
 
 function toExcel(rows,file,totals=null){if(!rows.length)return alert('No hay datos para exportar.');if(typeof XLSX==='undefined')return alert('No se pudo cargar el generador de Excel. Recargue la página e inténtelo nuevamente.');const data=rows.map(r=>({...r}));if(totals)data.push(totals);const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Reporte');XLSX.writeFile(wb,file)}
 function exportFuture(){
+
   const rows=reportRows().map(o=>{
+
     const sale=reportSaleForOrder(o);
 
+    const cancelled=
+      (o.status||'active')==='cancelled';
+
     return {
+
       OC:o.number||'',
       FechaServicio:dateOnly(o.serviceDate),
       Hora:o.time||'',
@@ -3245,15 +5312,44 @@ function exportFuture(){
       Proveedor:supplier(o.supplierId)||'',
       Pickup:o.place||'',
       Pax:Number(o.pax||0),
-      EstadoCobro:sale?'Cobrado':'Pendiente',
+
+      EstadoOC:
+        cancelled
+          ?'Cancelada'
+          :'Activa',
+
+      MotivoCancelacion:
+        cancelled
+          ?(o.cancellationReason||'')
+          :'',
+
+      EstadoCobro:
+        cancelled
+          ?'No aplica'
+          :(sale?'Cobrado':'Pendiente'),
+
       Factura:sale?.number||'',
-      MedioPago:sale?(sale.paymentMethod||'No registrado'):'',
+
+      MedioPago:
+        sale
+          ?(sale.paymentMethod||'No registrado')
+          :'',
+
       TotalOC:Number(o.total||0)
+
     };
+
   });
 
-  const totalPax=rows.reduce((a,r)=>a+Number(r.Pax||0),0);
-  const total=rows.reduce((a,r)=>a+Number(r.TotalOC||0),0);
+  const totalPax=rows.reduce(
+    (a,r)=>a+Number(r.Pax||0),
+    0
+  );
+
+  const total=rows.reduce(
+    (a,r)=>a+Number(r.TotalOC||0),
+    0
+  );
 
   toExcel(
     rows,
@@ -3268,12 +5364,15 @@ function exportFuture(){
       Proveedor:'',
       Pickup:'',
       Pax:totalPax,
+      EstadoOC:'',
+      MotivoCancelacion:'',
       EstadoCobro:'',
       Factura:'',
       MedioPago:'',
       TotalOC:total
     }
   );
+
 }
 
 function exportSeller(){
@@ -3331,7 +5430,12 @@ function exportAnalysis(){
 
   const rows=db.orders.filter(o=>{
     const d=dateOnly(o.serviceDate);
-    return (!f||d>=f)&&(!t||d<=t);
+    const active=
+      (o.status||'active')!=='cancelled';
+
+    return active
+      &&(!f||d>=f)
+      &&(!t||d<=t);
   });
 
   const map={};
