@@ -2713,45 +2713,699 @@ function printSale(id){
 }
 
 
-function reports(){return `<div class="toolbar"><h2>Reportes</h2></div><div class="card"><button class="primary" onclick="reportTab('future')">1. Tours por fecha de servicio</button> <button class="secondary" onclick="reportTab('seller')">2. Vendedores</button> <button class="secondary" onclick="reportTab('analysis')">3. Análisis de ventas</button></div>
-<div id="repFuture" class="report active card"><h3>Tours por fecha de servicio</h3><p>La fecha utilizada es la fecha en que se debe operar el tour, no la fecha de venta.</p><div class="filters"><div class="field"><label>Desde</label><input id="rFutureFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rFutureTo" type="date"></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportFuture()">Excel</button></div><div id="futureResult"></div></div>
-<div id="repSeller" class="report card"><h3>Vendedores por fecha de servicio</h3><div class="filters"><div class="field"><label>Desde</label><input id="rSellerFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rSellerTo" type="date"></div><div class="field"><label>Vendedor</label><select id="rSeller"><option value="">Todos</option>${db.sellers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportSeller()">Excel</button></div><div id="sellerResult"></div></div>
-<div id="repAnalysis" class="report card"><h3>Análisis configurable</h3><div class="filters"><div class="field"><label>Desde</label><input id="rAFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rATo" type="date"></div><div class="field"><label>Agrupar por</label><select id="rGroup"><option value="tour">Tour</option><option value="supplier">Proveedor</option><option value="seller">Vendedor</option><option value="client">Cliente</option></select></div><div class="field"><label>Ordenar</label><select id="rOrder"><option value="desc">Mayor a menor</option><option value="asc">Menor a mayor</option></select></div><div class="field"><label>Límite</label><select id="rLimit"><option value="5">5</option><option value="10">10</option><option value="25">25</option><option value="all">Todos</option></select></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportAnalysis()">Excel</button></div><div id="analysisResult"></div></div>`}
-function reportTab(which){document.querySelectorAll('.report').forEach(x=>x.style.display='none');$('rep'+(which==='future'?'Future':which==='seller'?'Seller':'Analysis')).style.display='block'}
+function reports(){return `
+<div class="toolbar">
+  <div>
+    <h2 style="margin-bottom:4px">Reportes</h2>
+    <small style="color:#64748b">Información operativa y financiera de Secreto La Fortuna Tours.</small>
+  </div>
+</div>
+
+<div class="card" style="padding:10px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+  <button id="reportBtnFuture" class="primary" onclick="reportTab('future')">Tours por fecha de servicio</button>
+  <button id="reportBtnSeller" class="secondary" onclick="reportTab('seller')">Vendedores</button>
+  <button id="reportBtnAnalysis" class="secondary" onclick="reportTab('analysis')">Análisis de ventas</button>
+</div>
+
+<div id="repFuture" class="report card" style="display:block">
+  <div style="margin-bottom:18px">
+    <h3 style="margin-bottom:4px">Tours por fecha de servicio</h3>
+    <small style="color:#64748b">Controle la operación y confirme rápidamente cuáles servicios ya fueron cobrados.</small>
+  </div>
+
+  <div class="filters">
+    <div class="field"><label>Desde</label><input id="rFutureFrom" type="date"></div>
+    <div class="field"><label>Hasta</label><input id="rFutureTo" type="date"></div>
+
+    <div class="field">
+      <label>Estado de cobro</label>
+      <select id="rFutureStatus">
+        <option value="">Todos</option>
+        <option value="paid">Cobrados</option>
+        <option value="pending">Pendientes</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Vendedor</label>
+      <select id="rFutureSeller">
+        <option value="">Todos</option>
+        ${db.sellers.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Proveedor</label>
+      <select id="rFutureSupplier">
+        <option value="">Todos</option>
+        ${db.suppliers.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Tour</label>
+      <select id="rFutureTour">
+        <option value="">Todos</option>
+        ${db.tours.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+      </select>
+    </div>
+
+    <button class="secondary" onclick="renderReports()">Actualizar</button>
+    <button class="secondary" onclick="clearFutureFilters()">Limpiar filtros</button>
+    <button class="secondary" onclick="exportFuture()">Excel</button>
+  </div>
+
+  <div id="futureSummary"></div>
+  <div id="futureResult"></div>
+</div>
+
+<div id="repSeller" class="report card" style="display:none">
+  <div style="margin-bottom:18px">
+    <h3 style="margin-bottom:4px">Vendedores por fecha de servicio</h3>
+    <small style="color:#64748b">Revise ventas, costos, margen, comisiones y documentos de cada operación.</small>
+  </div>
+
+  <div class="filters">
+    <div class="field"><label>Desde</label><input id="rSellerFrom" type="date"></div>
+    <div class="field"><label>Hasta</label><input id="rSellerTo" type="date"></div>
+
+    <div class="field">
+      <label>Vendedor</label>
+      <select id="rSeller">
+        <option value="">Todos</option>
+        ${db.sellers.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Ordenar por</label>
+      <select id="rSellerSort">
+        <option value="serviceDate">Fecha de servicio</option>
+        <option value="oc">Número de OC</option>
+        <option value="seller">Vendedor</option>
+        <option value="client">Cliente</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Orden</label>
+      <select id="rSellerDirection">
+        <option value="asc">Ascendente</option>
+        <option value="desc">Descendente</option>
+      </select>
+    </div>
+
+    <button class="secondary" onclick="renderReports()">Actualizar</button>
+    <button class="secondary" onclick="exportSeller()">Excel</button>
+  </div>
+
+  <div id="sellerResult"></div>
+</div>
+
+<div id="repAnalysis" class="report card" style="display:none">
+  <div style="margin-bottom:18px">
+    <h3 style="margin-bottom:4px">Análisis configurable</h3>
+    <small style="color:#64748b">Compare el desempeño por tour, proveedor, vendedor o cliente.</small>
+  </div>
+
+  <div class="filters">
+    <div class="field"><label>Desde</label><input id="rAFrom" type="date"></div>
+    <div class="field"><label>Hasta</label><input id="rATo" type="date"></div>
+
+    <div class="field">
+      <label>Agrupar por</label>
+      <select id="rGroup">
+        <option value="tour">Tour</option>
+        <option value="supplier">Proveedor</option>
+        <option value="seller">Vendedor</option>
+        <option value="client">Cliente</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Ordenar</label>
+      <select id="rOrder">
+        <option value="desc">Mayor a menor</option>
+        <option value="asc">Menor a mayor</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Límite</label>
+      <select id="rLimit">
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="all">Todos</option>
+      </select>
+    </div>
+
+    <button class="secondary" onclick="renderReports()">Actualizar</button>
+    <button class="secondary" onclick="exportAnalysis()">Excel</button>
+  </div>
+
+  <div id="analysisResult"></div>
+</div>`}
+
+function reportTab(which){
+  document.querySelectorAll('.report').forEach(x=>x.style.display='none');
+
+  const panels={
+    future:'repFuture',
+    seller:'repSeller',
+    analysis:'repAnalysis'
+  };
+
+  const buttons={
+    future:'reportBtnFuture',
+    seller:'reportBtnSeller',
+    analysis:'reportBtnAnalysis'
+  };
+
+  if($(panels[which]))$(panels[which]).style.display='block';
+
+  Object.entries(buttons).forEach(([key,id])=>{
+    const btn=$(id);
+    if(!btn)return;
+    btn.classList.remove('primary','secondary');
+    btn.classList.add(key===which?'primary':'secondary');
+  });
+
+  renderReports();
+}
+
+function reportSaleForOrder(o){
+  if(!o)return null;
+
+  if(o.saleId){
+    const byId=db.sales.find(s=>s.id===o.saleId);
+    if(byId)return byId;
+  }
+
+  return db.sales.find(s=>s.orderId===o.id)||null;
+}
+
 function reportRows(){
- const f=$('rFutureFrom')?.value||'',t=$('rFutureTo')?.value||'';
- return db.orders
-   .filter(o=>{
-     const d=dateOnly(o.serviceDate);
-     return (!f||d>=f)&&(!t||d<=t);
-   })
-   .sort((a,b)=>(dateOnly(a.serviceDate)+(a.time||'')).localeCompare(dateOnly(b.serviceDate)+(b.time||'')));
+  const f=$('rFutureFrom')?.value||'';
+  const t=$('rFutureTo')?.value||'';
+  const status=$('rFutureStatus')?.value||'';
+  const sellerId=$('rFutureSeller')?.value||'';
+  const supplierId=$('rFutureSupplier')?.value||'';
+  const tourId=$('rFutureTour')?.value||'';
+
+  return db.orders.filter(o=>{
+    const d=dateOnly(o.serviceDate);
+    const sale=reportSaleForOrder(o);
+    const paid=!!sale;
+
+    return (!f||d>=f)
+      &&(!t||d<=t)
+      &&(!status||(status==='paid'?paid:!paid))
+      &&(!sellerId||o.sellerId===sellerId)
+      &&(!supplierId||o.supplierId===supplierId)
+      &&(!tourId||o.tourId===tourId);
+  }).sort((a,b)=>
+    (dateOnly(a.serviceDate)+(a.time||'')).localeCompare(
+      dateOnly(b.serviceDate)+(b.time||'')
+    )
+  );
 }
+
+function clearFutureFilters(){
+  ['rFutureFrom','rFutureTo','rFutureStatus','rFutureSeller','rFutureSupplier','rFutureTour']
+    .forEach(id=>{if($(id))$(id).value='';});
+  renderReports();
+}
+
+function sellerReportRows(){
+  const f=$('rSellerFrom')?.value||'';
+  const t=$('rSellerTo')?.value||'';
+  const sv=$('rSeller')?.value||'';
+  const sort=$('rSellerSort')?.value||'serviceDate';
+  const direction=$('rSellerDirection')?.value||'asc';
+
+  const rows=db.sales.filter(s=>{
+    const d=dateOnly(s.serviceDate);
+    return (!f||d>=f)&&(!t||d<=t)&&(!sv||s.sellerId===sv);
+  }).map(s=>{
+    const o=db.orders.find(x=>x.id===s.orderId);
+    const cost=Number(o?.subtotal||0);
+    const sale=Number(s.subtotal||0)-Number(s.discountAmount||0);
+    const margin=sale-cost;
+    const rate=Number(db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0);
+    const commission=Math.max(0,margin)*rate/100;
+
+    return {s,o,cost,sale,margin,rate,commission};
+  });
+
+  const compare=(a,b)=>{
+    let av='',bv='';
+
+    if(sort==='oc'){
+      const an=Number(String(a.o?.number||'').replace(/\D/g,''))||0;
+      const bn=Number(String(b.o?.number||'').replace(/\D/g,''))||0;
+      if(an!==bn)return direction==='asc'?an-bn:bn-an;
+      av=String(a.o?.number||'');
+      bv=String(b.o?.number||'');
+    }else if(sort==='seller'){
+      av=String(a.s.seller||'').toLowerCase();
+      bv=String(b.s.seller||'').toLowerCase();
+    }else if(sort==='client'){
+      av=String(a.s.customerName||'').toLowerCase();
+      bv=String(b.s.customerName||'').toLowerCase();
+    }else{
+      av=dateOnly(a.s.serviceDate)+(a.o?.time||'');
+      bv=dateOnly(b.s.serviceDate)+(b.o?.time||'');
+    }
+
+    const result=av.localeCompare(bv,undefined,{numeric:true,sensitivity:'base'});
+    return direction==='asc'?result:-result;
+  };
+
+  return rows.sort(compare);
+}
+
 function renderReports(){
- if(!$('futureResult'))return;
- const future=reportRows();$('futureResult').innerHTML=future.length?`<table><tr><th>Fecha</th><th>Hora</th><th>Tour</th><th>Cliente</th><th>Vendedor</th><th>Proveedor</th><th>Pickup</th><th>Pax</th><th>OC</th></tr>${future.map(o=>`<tr><td>${dateOnly(o.serviceDate).split('-').reverse().join('/')}</td><td>${o.time||'-'}</td><td>${esc(o.tour)}</td><td>${esc(o.customerName)}</td><td>${esc(o.seller)}</td><td>${esc(supplier(o.supplierId))}</td><td>${esc(o.place||'-')}</td><td>${o.pax}</td><td>${o.number}</td></tr>`).join('')}</table>`:'<div class="empty">No hay servicios para el rango indicado.</div>';
- const sf=$('rSellerFrom')?.value||'',st=$('rSellerTo')?.value||'',sv=$('rSeller')?.value||'';
- const ss=db.sales.filter(s=>{
-   const d=dateOnly(s.serviceDate);
-   return (!sf||d>=sf)&&(!st||d<=st)&&(!sv||s.sellerId===sv);
- });
- const sellerRows=ss.map(s=>{const o=db.orders.find(x=>x.id===s.orderId),cost=Number(o?.subtotal||0),sale=Number(s.subtotal||0)-Number(s.discountAmount||0),margin=sale-cost,rate=Number(db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0),commission=Math.max(0,margin)*rate/100;return {s,cost,sale,margin,rate,commission};});
- const sellerTotals=sellerRows.reduce((a,r)=>({sale:a.sale+r.sale,cost:a.cost+r.cost,margin:a.margin+r.margin,commission:a.commission+r.commission}),{sale:0,cost:0,margin:0,commission:0});
- $('sellerResult').innerHTML=sellerRows.length?`<div class="cards" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px"><div class="card"><small>Ventas sin IVA</small><div class="metric">${money(sellerTotals.sale)}</div></div><div class="card"><small>Costos sin IVA</small><div class="metric">${money(sellerTotals.cost)}</div></div><div class="card"><small>Margen</small><div class="metric">${money(sellerTotals.margin)}</div></div><div class="card"><small>Comisión a pagar</small><div class="metric">${money(sellerTotals.commission)}</div></div></div><table><tr><th>Fecha servicio</th><th>Vendedor</th><th>Tour</th><th>Cliente</th><th>Venta</th><th>Costo</th><th>Margen</th><th>%</th><th>Comisión</th></tr>${sellerRows.map(r=>`<tr><td>${dateOnly(r.s.serviceDate).split('-').reverse().join('/')}</td><td>${esc(r.s.seller)}</td><td>${esc(r.s.tour)}</td><td>${esc(r.s.customerName)}</td><td>${money(r.sale)}</td><td>${money(r.cost)}</td><td>${money(r.margin)}</td><td>${r.rate}%</td><td>${money(r.commission)}</td></tr>`).join('')}<tr><th colspan="4">TOTAL</th><th>${money(sellerTotals.sale)}</th><th>${money(sellerTotals.cost)}</th><th>${money(sellerTotals.margin)}</th><th></th><th>${money(sellerTotals.commission)}</th></tr></table>`:'<div class="empty">No hay ventas para el rango.</div>';
- const af=$('rAFrom')?.value||'',at=$('rATo')?.value||'',g=$('rGroup')?.value||'tour',ord=$('rOrder')?.value||'desc',lim=$('rLimit')?.value||'5';
- const base=db.orders.filter(o=>{
-   const d=dateOnly(o.serviceDate);
-   return (!af||d>=af)&&(!at||d<=at);
- }),map={};
- base.forEach(o=>{const key=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;if(!map[key])map[key]={name:key,services:0,pax:0,sales:0,cost:0};map[key].services++;map[key].pax+=o.pax||0;map[key].cost+=o.subtotal||0;const s=db.sales.find(x=>x.orderId===o.id);if(s)map[key].sales+=s.subtotal-s.discountAmount});
- let ar=Object.values(map).sort((a,b)=>ord==='desc'?b.services-a.services:a.services-b.services);if(lim!=='all')ar=ar.slice(0,+lim);
- const analysisTotals=ar.reduce((a,x)=>({services:a.services+x.services,pax:a.pax+x.pax,sales:a.sales+x.sales,cost:a.cost+x.cost}),{services:0,pax:0,sales:0,cost:0});
- $('analysisResult').innerHTML=ar.length?`<div class="cards" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px"><div class="card"><small>Servicios</small><div class="metric">${analysisTotals.services}</div></div><div class="card"><small>Pasajeros</small><div class="metric">${analysisTotals.pax}</div></div><div class="card"><small>Ventas sin IVA</small><div class="metric">${money(analysisTotals.sales)}</div></div><div class="card"><small>Costos sin IVA</small><div class="metric">${money(analysisTotals.cost)}</div></div><div class="card"><small>Margen</small><div class="metric">${money(analysisTotals.sales-analysisTotals.cost)}</div></div></div><table><tr><th>${g==='tour'?'Tour':g==='supplier'?'Proveedor':g==='seller'?'Vendedor':'Cliente'}</th><th>Servicios</th><th>Pax</th><th>Ventas sin IVA</th><th>Costos sin IVA</th><th>Margen</th></tr>${ar.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.services}</td><td>${x.pax}</td><td>${money(x.sales)}</td><td>${money(x.cost)}</td><td>${money(x.sales-x.cost)}</td></tr>`).join('')}<tr><th>TOTAL</th><th>${analysisTotals.services}</th><th>${analysisTotals.pax}</th><th>${money(analysisTotals.sales)}</th><th>${money(analysisTotals.cost)}</th><th>${money(analysisTotals.sales-analysisTotals.cost)}</th></tr></table>`:'<div class="empty">No hay datos.</div>';
+  if(!$('futureResult'))return;
+
+  const future=reportRows();
+  const paidCount=future.filter(o=>!!reportSaleForOrder(o)).length;
+  const pendingCount=future.length-paidCount;
+  const paxTotal=future.reduce((a,o)=>a+Number(o.pax||0),0);
+
+  $('futureSummary').innerHTML=`
+    <div class="cards" style="grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 14px">
+      <div class="card" style="background:#f8fafc">
+        <small style="color:#64748b">Servicios</small>
+        <div class="metric">${future.length}</div>
+      </div>
+      <div class="card" style="background:#f8fafc">
+        <small style="color:#64748b">Pasajeros</small>
+        <div class="metric">${paxTotal}</div>
+      </div>
+      <div class="card" style="background:#f0fdf4">
+        <small style="color:#15803d">Cobrados</small>
+        <div class="metric">${paidCount}</div>
+      </div>
+      <div class="card" style="background:#fff7ed">
+        <small style="color:#c2410c">Pendientes</small>
+        <div class="metric">${pendingCount}</div>
+      </div>
+    </div>`;
+
+  $('futureResult').innerHTML=future.length?`
+    <div style="overflow-x:auto">
+      <table>
+        <tr>
+          <th>Fecha / Hora</th>
+          <th>Servicio</th>
+          <th>Cliente</th>
+          <th>Operación</th>
+          <th>Cobro</th>
+          <th>Documentos</th>
+        </tr>
+
+        ${future.map(o=>{
+          const sale=reportSaleForOrder(o);
+          const paid=!!sale;
+
+          return `<tr>
+            <td>
+              <strong>${dateOnly(o.serviceDate).split('-').reverse().join('/')}</strong>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(o.time||'Sin hora')}</div>
+            </td>
+
+            <td>
+              <strong>${esc(o.tour||'-')}</strong>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">${Number(o.pax||0)} pasajero${Number(o.pax||0)===1?'':'s'}</div>
+            </td>
+
+            <td>
+              <strong>${esc(o.customerName||'-')}</strong>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(o.place||'Sin pickup')}</div>
+            </td>
+
+            <td>
+              <div>${esc(o.seller||'-')}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(supplier(o.supplierId)||'-')}</div>
+            </td>
+
+            <td>
+              ${paid
+                ?`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:700">Cobrado</span>
+                   <div style="font-size:12px;color:#64748b;margin-top:5px">${esc(sale.number||'Factura')} · ${esc(sale.paymentMethod||'No registrado')}</div>`
+                :`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:12px;font-weight:700">Pendiente</span>`
+              }
+            </td>
+
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="secondary" onclick="previewOrder('${o.id}')">${esc(o.number||'OC')}</button>
+                ${sale?`<button class="secondary" onclick="previewSale('${sale.id}')">${esc(sale.number||'Factura')}</button>`:''}
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>`
+    :'<div class="empty">No hay servicios para los filtros indicados.</div>';
+
+  const sellerRows=sellerReportRows();
+
+  const sellerTotals=sellerRows.reduce((a,r)=>({
+    sale:a.sale+r.sale,
+    cost:a.cost+r.cost,
+    margin:a.margin+r.margin,
+    commission:a.commission+r.commission
+  }),{sale:0,cost:0,margin:0,commission:0});
+
+  $('sellerResult').innerHTML=sellerRows.length?`
+    <div class="cards" style="grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 14px">
+      <div class="card">
+        <small>Ventas sin IVA</small>
+        <div class="metric">${money(sellerTotals.sale)}</div>
+      </div>
+      <div class="card">
+        <small>Costos sin IVA</small>
+        <div class="metric">${money(sellerTotals.cost)}</div>
+      </div>
+      <div class="card">
+        <small>Margen</small>
+        <div class="metric">${money(sellerTotals.margin)}</div>
+      </div>
+      <div class="card">
+        <small>Comisión a pagar</small>
+        <div class="metric">${money(sellerTotals.commission)}</div>
+      </div>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table>
+        <tr>
+          <th>Fecha / Hora</th>
+          <th>OC</th>
+          <th>Vendedor</th>
+          <th>Tour</th>
+          <th>Cliente</th>
+          <th>Venta</th>
+          <th>Costo</th>
+          <th>Margen</th>
+          <th>%</th>
+          <th>Comisión</th>
+          <th>Documentos</th>
+        </tr>
+
+        ${sellerRows.map(r=>`
+          <tr>
+            <td>
+              <strong>${dateOnly(r.s.serviceDate).split('-').reverse().join('/')}</strong>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(r.o?.time||'Sin hora')}</div>
+            </td>
+            <td>${esc(r.o?.number||'-')}</td>
+            <td>${esc(r.s.seller||'-')}</td>
+            <td>${esc(r.s.tour||'-')}</td>
+            <td>${esc(r.s.customerName||'-')}</td>
+            <td>${money(r.sale)}</td>
+            <td>${money(r.cost)}</td>
+            <td>${money(r.margin)}</td>
+            <td>${r.rate}%</td>
+            <td><strong>${money(r.commission)}</strong></td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${r.o?`<button class="secondary" onclick="previewOrder('${r.o.id}')">${esc(r.o.number||'OC')}</button>`:''}
+                <button class="secondary" onclick="previewSale('${r.s.id}')">${esc(r.s.number||'Factura')}</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+
+        <tr>
+          <th colspan="5">TOTAL</th>
+          <th>${money(sellerTotals.sale)}</th>
+          <th>${money(sellerTotals.cost)}</th>
+          <th>${money(sellerTotals.margin)}</th>
+          <th></th>
+          <th>${money(sellerTotals.commission)}</th>
+          <th></th>
+        </tr>
+      </table>
+    </div>`
+    :'<div class="empty">No hay ventas para el rango indicado.</div>';
+
+  const af=$('rAFrom')?.value||'';
+  const at=$('rATo')?.value||'';
+  const g=$('rGroup')?.value||'tour';
+  const ord=$('rOrder')?.value||'desc';
+  const lim=$('rLimit')?.value||'5';
+
+  const base=db.orders.filter(o=>{
+    const d=dateOnly(o.serviceDate);
+    return (!af||d>=af)&&(!at||d<=at);
+  }),map={};
+
+  base.forEach(o=>{
+    const key=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;
+
+    if(!map[key])map[key]={name:key,services:0,pax:0,sales:0,cost:0};
+
+    map[key].services++;
+    map[key].pax+=Number(o.pax||0);
+    map[key].cost+=Number(o.subtotal||0);
+
+    const sale=reportSaleForOrder(o);
+    if(sale)map[key].sales+=Number(sale.subtotal||0)-Number(sale.discountAmount||0);
+  });
+
+  let ar=Object.values(map).sort((a,b)=>ord==='desc'?b.services-a.services:a.services-b.services);
+  if(lim!=='all')ar=ar.slice(0,+lim);
+
+  const analysisTotals=ar.reduce((a,x)=>({
+    services:a.services+x.services,
+    pax:a.pax+x.pax,
+    sales:a.sales+x.sales,
+    cost:a.cost+x.cost
+  }),{services:0,pax:0,sales:0,cost:0});
+
+  $('analysisResult').innerHTML=ar.length?`
+    <div class="cards" style="grid-template-columns:repeat(5,minmax(0,1fr));margin:18px 0 14px">
+      <div class="card"><small>Servicios</small><div class="metric">${analysisTotals.services}</div></div>
+      <div class="card"><small>Pasajeros</small><div class="metric">${analysisTotals.pax}</div></div>
+      <div class="card"><small>Ventas sin IVA</small><div class="metric">${money(analysisTotals.sales)}</div></div>
+      <div class="card"><small>Costos sin IVA</small><div class="metric">${money(analysisTotals.cost)}</div></div>
+      <div class="card"><small>Margen</small><div class="metric">${money(analysisTotals.sales-analysisTotals.cost)}</div></div>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table>
+        <tr>
+          <th>${g==='tour'?'Tour':g==='supplier'?'Proveedor':g==='seller'?'Vendedor':'Cliente'}</th>
+          <th>Servicios</th>
+          <th>Pax</th>
+          <th>Ventas sin IVA</th>
+          <th>Costos sin IVA</th>
+          <th>Margen</th>
+        </tr>
+
+        ${ar.map(x=>`
+          <tr>
+            <td>${esc(x.name||'-')}</td>
+            <td>${x.services}</td>
+            <td>${x.pax}</td>
+            <td>${money(x.sales)}</td>
+            <td>${money(x.cost)}</td>
+            <td>${money(x.sales-x.cost)}</td>
+          </tr>
+        `).join('')}
+
+        <tr>
+          <th>TOTAL</th>
+          <th>${analysisTotals.services}</th>
+          <th>${analysisTotals.pax}</th>
+          <th>${money(analysisTotals.sales)}</th>
+          <th>${money(analysisTotals.cost)}</th>
+          <th>${money(analysisTotals.sales-analysisTotals.cost)}</th>
+        </tr>
+      </table>
+    </div>`
+    :'<div class="empty">No hay datos.</div>';
 }
+
 function toExcel(rows,file,totals=null){if(!rows.length)return alert('No hay datos para exportar.');if(typeof XLSX==='undefined')return alert('No se pudo cargar el generador de Excel. Recargue la página e inténtelo nuevamente.');const data=rows.map(r=>({...r}));if(totals)data.push(totals);const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Reporte');XLSX.writeFile(wb,file)}
-function exportFuture(){const rows=reportRows().map(o=>({OC:o.number,FechaServicio:o.serviceDate,Hora:o.time||'',Tour:o.tour,Cliente:o.customerName,Vendedor:o.seller,Proveedor:supplier(o.supplierId),Pickup:o.place||'',Pax:Number(o.pax||0),Total:Number(o.total||0)}));const totalPax=rows.reduce((a,r)=>a+r.Pax,0),total=rows.reduce((a,r)=>a+r.Total,0);toExcel(rows,'tours_fecha_servicio.xlsx',{OC:'TOTAL',FechaServicio:'',Hora:'',Tour:'',Cliente:'',Vendedor:'',Proveedor:'',Pickup:'',Pax:totalPax,Total:total})}
-function exportSeller(){const f=$('rSellerFrom').value,t=$('rSellerTo').value,sv=$('rSeller').value,ss=db.sales.filter(s=>(!f||s.serviceDate>=f)&&(!t||s.serviceDate<=t)&&(!sv||s.sellerId===sv));const rows=ss.map(s=>{const o=db.orders.find(x=>x.id===s.orderId),cost=Number(o?.subtotal||0),sale=Number(s.subtotal||0)-Number(s.discountAmount||0),margin=sale-cost,rate=Number(db.sellers.find(x=>x.id===s.sellerId)?.commissionRate||0),commission=Math.max(0,margin)*rate/100;return{FechaServicio:s.serviceDate,Vendedor:s.seller,Tour:s.tour,Cliente:s.customerName,Venta:sale,Costo:cost,Margen:margin,ComisionPorcentaje:rate,Comision:commission}});const totals=rows.reduce((a,r)=>({FechaServicio:'',Vendedor:'',Tour:'',Cliente:'TOTAL',Venta:a.Venta+r.Venta,Costo:a.Costo+r.Costo,Margen:a.Margen+r.Margen,ComisionPorcentaje:'',Comision:a.Comision+r.Comision}),{Venta:0,Costo:0,Margen:0,Comision:0});toExcel(rows,'vendedores_comisiones.xlsx',totals)}
-function exportAnalysis(){const f=$('rAFrom').value,t=$('rATo').value,g=$('rGroup').value,rows=db.orders.filter(o=>(!f||o.serviceDate>=f)&&(!t||o.serviceDate<=t)),map={};rows.forEach(o=>{const k=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;if(!map[k])map[k]={Nombre:k,Servicios:0,Pasajeros:0,VentasSinIVA:0,CostosSinIVA:0};map[k].Servicios++;map[k].Pasajeros+=Number(o.pax||0);map[k].CostosSinIVA+=Number(o.subtotal||0);const s=db.sales.find(x=>x.orderId===o.id);if(s)map[k].VentasSinIVA+=Number(s.subtotal||0)-Number(s.discountAmount||0)});const out=Object.values(map).map(x=>({Nombre:x.Nombre,Servicios:x.Servicios,Pasajeros:x.Pasajeros,VentasSinIVA:x.VentasSinIVA,CostosSinIVA:x.CostosSinIVA,Margen:x.VentasSinIVA-x.CostosSinIVA}));const totals=out.reduce((a,r)=>({Nombre:'TOTAL',Servicios:a.Servicios+r.Servicios,Pasajeros:a.Pasajeros+r.Pasajeros,VentasSinIVA:a.VentasSinIVA+r.VentasSinIVA,CostosSinIVA:a.CostosSinIVA+r.CostosSinIVA,Margen:a.Margen+r.Margen}),{Servicios:0,Pasajeros:0,VentasSinIVA:0,CostosSinIVA:0,Margen:0});toExcel(out,'analisis_tours_proveedores.xlsx',totals)}
+function exportFuture(){
+  const rows=reportRows().map(o=>{
+    const sale=reportSaleForOrder(o);
+
+    return {
+      OC:o.number||'',
+      FechaServicio:dateOnly(o.serviceDate),
+      Hora:o.time||'',
+      Tour:o.tour||'',
+      Cliente:o.customerName||'',
+      Vendedor:o.seller||'',
+      Proveedor:supplier(o.supplierId)||'',
+      Pickup:o.place||'',
+      Pax:Number(o.pax||0),
+      EstadoCobro:sale?'Cobrado':'Pendiente',
+      Factura:sale?.number||'',
+      MedioPago:sale?(sale.paymentMethod||'No registrado'):'',
+      TotalOC:Number(o.total||0)
+    };
+  });
+
+  const totalPax=rows.reduce((a,r)=>a+Number(r.Pax||0),0);
+  const total=rows.reduce((a,r)=>a+Number(r.TotalOC||0),0);
+
+  toExcel(
+    rows,
+    'tours_fecha_servicio.xlsx',
+    {
+      OC:'TOTAL',
+      FechaServicio:'',
+      Hora:'',
+      Tour:'',
+      Cliente:'',
+      Vendedor:'',
+      Proveedor:'',
+      Pickup:'',
+      Pax:totalPax,
+      EstadoCobro:'',
+      Factura:'',
+      MedioPago:'',
+      TotalOC:total
+    }
+  );
+}
+
+function exportSeller(){
+  const sellerRows=sellerReportRows();
+
+  const rows=sellerRows.map(r=>({
+    FechaServicio:dateOnly(r.s.serviceDate),
+    Hora:r.o?.time||'',
+    OC:r.o?.number||'',
+    Factura:r.s.number||'',
+    Vendedor:r.s.seller||'',
+    Tour:r.s.tour||'',
+    Cliente:r.s.customerName||'',
+    MedioPago:r.s.paymentMethod||'No registrado',
+    Venta:r.sale,
+    Costo:r.cost,
+    Margen:r.margin,
+    ComisionPorcentaje:r.rate,
+    Comision:r.commission
+  }));
+
+  const totals=rows.reduce(
+    (a,r)=>({
+      FechaServicio:'',
+      Hora:'',
+      OC:'',
+      Factura:'',
+      Vendedor:'',
+      Tour:'',
+      Cliente:'TOTAL',
+      MedioPago:'',
+      Venta:a.Venta+Number(r.Venta||0),
+      Costo:a.Costo+Number(r.Costo||0),
+      Margen:a.Margen+Number(r.Margen||0),
+      ComisionPorcentaje:'',
+      Comision:a.Comision+Number(r.Comision||0)
+    }),
+    {
+      Venta:0,
+      Costo:0,
+      Margen:0,
+      Comision:0
+    }
+  );
+
+  toExcel(rows,'vendedores_comisiones.xlsx',totals);
+}
+
+function exportAnalysis(){
+  const f=$('rAFrom')?.value||'';
+  const t=$('rATo')?.value||'';
+  const g=$('rGroup')?.value||'tour';
+  const ord=$('rOrder')?.value||'desc';
+  const lim=$('rLimit')?.value||'5';
+
+  const rows=db.orders.filter(o=>{
+    const d=dateOnly(o.serviceDate);
+    return (!f||d>=f)&&(!t||d<=t);
+  });
+
+  const map={};
+
+  rows.forEach(o=>{
+    const k=
+      g==='tour'
+        ?o.tour
+        :g==='supplier'
+          ?supplier(o.supplierId)
+          :g==='seller'
+            ?o.seller
+            :o.client;
+
+    if(!map[k]){
+      map[k]={
+        Nombre:k,
+        Servicios:0,
+        Pasajeros:0,
+        VentasSinIVA:0,
+        CostosSinIVA:0
+      };
+    }
+
+    map[k].Servicios++;
+    map[k].Pasajeros+=Number(o.pax||0);
+    map[k].CostosSinIVA+=Number(o.subtotal||0);
+
+    const sale=reportSaleForOrder(o);
+
+    if(sale){
+      map[k].VentasSinIVA+=
+        Number(sale.subtotal||0)-
+        Number(sale.discountAmount||0);
+    }
+  });
+
+  let out=Object.values(map).map(x=>({
+    Nombre:x.Nombre,
+    Servicios:x.Servicios,
+    Pasajeros:x.Pasajeros,
+    VentasSinIVA:x.VentasSinIVA,
+    CostosSinIVA:x.CostosSinIVA,
+    Margen:x.VentasSinIVA-x.CostosSinIVA
+  }));
+
+  out.sort((a,b)=>
+    ord==='desc'
+      ?b.Servicios-a.Servicios
+      :a.Servicios-b.Servicios
+  );
+
+  if(lim!=='all')out=out.slice(0,+lim);
+
+  const totals=out.reduce(
+    (a,r)=>({
+      Nombre:'TOTAL',
+      Servicios:a.Servicios+r.Servicios,
+      Pasajeros:a.Pasajeros+r.Pasajeros,
+      VentasSinIVA:a.VentasSinIVA+r.VentasSinIVA,
+      CostosSinIVA:a.CostosSinIVA+r.CostosSinIVA,
+      Margen:a.Margen+r.Margen
+    }),
+    {
+      Servicios:0,
+      Pasajeros:0,
+      VentasSinIVA:0,
+      CostosSinIVA:0,
+      Margen:0
+    }
+  );
+
+  toExcel(out,'analisis_tours_proveedores.xlsx',totals);
+}
 
 function clients(){return listView('Clientes','client',db.clients.map(c=>[c.name,c.type||'',c.phone||'',c.currency||'USD']),['Nombre','Tipo','Teléfono','Moneda'])}
 function suppliers(){return `<div class="toolbar"><h2>Proveedores</h2><button class="primary" onclick="simpleForm('supplier')">+ Nuevo proveedor</button></div><div class="card">${db.suppliers.length?`<table><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Acción</th></tr>${db.suppliers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.contact||'')}</td><td>${esc(s.phone||'')}</td><td>${esc(s.email||'')}</td><td><button class="secondary" onclick="simpleForm('supplier','${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay proveedores.</div>'}</div>`}
