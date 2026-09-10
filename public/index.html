@@ -1113,26 +1113,34 @@ function tmOrderSearchText(v){
 }
 
 function filterOrderRows(){
+
   const input=$('tmOrderSearch');
   const supplierSelect=$('tmOrderSupplier');
   const statusSelect=$('tmOrderStatus');
+  const billingSelect=$('tmOrderBilling');
 
   const q=tmOrderSearchText(input?.value||'');
   const sf=supplierSelect?.value||'';
   const status=statusSelect?.value||'active';
+  const billing=billingSelect?.value||'all';
 
   window.orderQ=input?.value||'';
   window.orderSupplier=sf;
   window.orderStatus=status;
+  window.orderBilling=billing;
 
   let visible=0;
 
   document.querySelectorAll('.tm-oc-row').forEach(row=>{
+
     const rowStatus=row.dataset.status||'active';
+    const rowBilling=row.dataset.billing||'pending';
 
     const searchOK=
       !q ||
-      tmOrderSearchText(row.dataset.search||'').includes(q);
+      tmOrderSearchText(
+        row.dataset.search||''
+      ).includes(q);
 
     const supplierOK=
       !sf ||
@@ -1140,14 +1148,29 @@ function filterOrderRows(){
 
     const statusOK=
       status==='all' ||
-      (status==='active' && rowStatus!=='cancelled') ||
-      (status==='cancelled' && rowStatus==='cancelled');
+      (
+        status==='active' &&
+        rowStatus!=='cancelled'
+      ) ||
+      (
+        status==='cancelled' &&
+        rowStatus==='cancelled'
+      );
 
-    const show=searchOK && supplierOK && statusOK;
+    const billingOK=
+      billing==='all' ||
+      rowBilling===billing;
+
+    const show=
+      searchOK &&
+      supplierOK &&
+      statusOK &&
+      billingOK;
 
     row.style.display=show?'':'none';
 
     if(show)visible++;
+
   });
 
   const counter=$('tmOrderCounter');
@@ -1160,8 +1183,10 @@ function filterOrderRows(){
   const empty=$('tmOrderEmptyFiltered');
 
   if(empty){
-    empty.style.display=visible ? 'none' : 'block';
+    empty.style.display=
+      visible ? 'none' : 'block';
   }
+
 }
 
 function cancelOrderForm(id){
@@ -1610,6 +1635,11 @@ function orders(){
       background:#fff6e8;
     }
 
+    .tm-oc-pill-neutral{
+      color:#667085;
+      background:#f2f4f7;
+    }
+
     .tm-oc-updated{
       line-height:1.35;
       white-space:nowrap;
@@ -1843,6 +1873,36 @@ function orders(){
 
         </div>
 
+        <div class="field">
+
+          <label>Facturación</label>
+
+          <select
+            id="tmOrderBilling"
+            onchange="filterOrderRows()">
+
+            <option
+              value="all"
+              ${(window.orderBilling||'all')==='all'?'selected':''}>
+              Todas
+            </option>
+
+            <option
+              value="pending"
+              ${window.orderBilling==='pending'?'selected':''}>
+              Pendientes de facturar
+            </option>
+
+            <option
+              value="invoiced"
+              ${window.orderBilling==='invoiced'?'selected':''}>
+              Facturadas
+            </option>
+
+          </select>
+
+        </div>
+
         <div
           id="tmOrderCounter"
           class="tm-oc-result-count">
@@ -1904,6 +1964,7 @@ function orders(){
                         data-search="${esc(searchText)}"
                         data-supplier="${esc(o.supplierId||'')}"
                         data-status="${esc(status)}"
+                        data-billing="${cancelled?'na':(o.saleId?'invoiced':'pending')}"
                         style="${initiallyVisible?'':'display:none'}">
 
                         <td>
@@ -2014,6 +2075,32 @@ function orders(){
                                   }
 
                                 </span>
+
+                            ${
+
+                              cancelled
+
+                              ? `
+                                <span class="tm-oc-pill tm-oc-pill-neutral">
+                                  Factura: No aplica
+                                </span>
+                              `
+
+                              : o.saleId
+
+                                ? `
+                                  <span class="tm-oc-pill tm-oc-pill-paid">
+                                    ✓ Facturada
+                                  </span>
+                                `
+
+                                : `
+                                  <span class="tm-oc-pill tm-oc-pill-pending">
+                                    Factura pendiente
+                                  </span>
+                                `
+
+                            }
                               `
                               : ''
                             }
@@ -6637,6 +6724,23 @@ async function tmAuthInit(){
   }catch(e){screen.style.display='flex';document.getElementById('tm-auth-msg').textContent='No fue posible conectar con el servidor.'}
 }
 async function tmLogout(){try{await fetch('/api/auth/logout',{method:'POST'});}finally{location.reload()}}
+document.addEventListener('click',e=>{
+
+  const current=
+    e.target.closest?.('.tm-oc-actions details');
+
+  document
+    .querySelectorAll('.tm-oc-actions details[open]')
+    .forEach(d=>{
+
+      if(d!==current){
+        d.removeAttribute('open');
+      }
+
+    });
+
+});
+
 document.addEventListener('DOMContentLoaded',tmAuthInit);
 </script>
 </body>
