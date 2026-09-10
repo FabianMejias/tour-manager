@@ -1205,6 +1205,35 @@ app.patch('/api/tour-rates/:id/status', async (req,res) => {
 });
 
 
+
+// ============================================================
+// MEDIO DE PAGO EN FACTURAS
+// ============================================================
+// Migración aditiva y segura.
+// Las facturas existentes quedan con payment_method = NULL.
+// No modifica importes, OCs, pagos ni ventas históricas.
+// ============================================================
+
+(async () => {
+  try {
+
+    await pool.query(`
+      ALTER TABLE sales
+      ADD COLUMN IF NOT EXISTS payment_method TEXT
+    `);
+
+    console.log('OK: medio de pago disponible en facturas.');
+
+  } catch (e) {
+
+    console.error(
+      'ERROR creando medio de pago en facturas:',
+      e.message
+    );
+
+  }
+})();
+
 app.get('/api/health', async (req,res) => {
   try { const r=await q('SELECT NOW() AS now'); res.json({ok:true, database:true, time:r.rows[0].now}); }
   catch(e){ res.status(500).json({ok:false,error:'Database connection failed'}); }
@@ -1246,7 +1275,7 @@ async function getState(client) {
       ORDER BY t.name
     `),
     client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id FROM purchase_orders ORDER BY number DESC`),
-    client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency FROM sales ORDER BY number DESC`),
+    client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method FROM sales ORDER BY number DESC`),
     client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes FROM payments ORDER BY number DESC`),
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
     client.query(`SELECT code,current_value FROM sequences`),
@@ -1278,8 +1307,8 @@ async function getState(client) {
       currentRateTo:x.current_rate_to,
       currentRateActive:x.current_rate_active
     })),
-    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
-    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate||13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD'})),
+    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
+    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||''})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
     seq: Object.fromEntries(sequences.rows.map(x=>[x.code,Number(x.current_value)])),
@@ -1351,9 +1380,9 @@ async function replaceState(client, db) {
         INSERT INTO sales(
           id,number,operation_number,client_id,seller_id,tour_id,client_name,
           service_date,passengers,unit_price,subtotal,discount_percent,
-          discount_amount,taxable_amount,tax_rate,tax_amount,total,currency
+          discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method
         )
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         ON CONFLICT(id) DO UPDATE SET
           client_id=EXCLUDED.client_id,
           seller_id=EXCLUDED.seller_id,
@@ -1369,14 +1398,16 @@ async function replaceState(client, db) {
           tax_rate=EXCLUDED.tax_rate,
           tax_amount=EXCLUDED.tax_amount,
           total=EXCLUDED.total,
-          currency=EXCLUDED.currency
+          currency=EXCLUDED.currency,
+          payment_method=EXCLUDED.payment_method
       `,[
         x.id,x.number,x.op,x.clientId,x.sellerId,x.tourId,x.customerName,
         x.serviceDate,x.pax||1,Number(x.unitPrice||0),Number(x.subtotal||0),
         Number(x.discount||0),Number(x.discountAmount||0),
         Number(x.taxableAmount||((x.subtotal||0)-(x.discountAmount||0))),
         Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
-        x.currency||'USD'
+        x.currency||'USD',
+        x.paymentMethod||null
       ]);
     }
 

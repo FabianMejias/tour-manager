@@ -2188,16 +2188,25 @@ function saleForm(orderId){
  const t=db.tours.find(x=>x.id===o.tourId);
 
  modal('Generar factura desde '+o.number,`
- <div class="grid">
+
+ <div style="margin-bottom:18px">
+   <div style="font-size:13px;color:#64748b;margin-bottom:4px">
+     Complete los datos de cobro de esta operación
+   </div>
+ </div>
+
+ <div class="grid" style="gap:14px">
 
    <div class="field">
      <label>Cliente</label>
-     <input disabled value="${esc(o.customerName)}">
+     <input disabled value="${esc(o.customerName)}"
+       style="background:#f8fafc">
    </div>
 
    <div class="field">
      <label>Tour</label>
-     <input disabled value="${esc(o.tour)}">
+     <input disabled value="${esc(o.tour)}"
+       style="background:#f8fafc">
    </div>
 
    <div class="field">
@@ -2221,59 +2230,120 @@ function saleForm(orderId){
    </div>
 
    <div class="field">
-     <label style="display:flex;align-items:center;gap:8px;margin-top:28px">
+     <label>Medio de pago *</label>
+     <select id="salePaymentMethod">
+       <option value="">Seleccione...</option>
+       <option value="Cash">Cash</option>
+       <option value="Compra Click">Compra Click</option>
+       <option value="Tarjeta">Tarjeta</option>
+     </select>
+   </div>
+
+   <div class="field">
+     <label>Impuestos</label>
+
+     <label style="
+       min-height:46px;
+       display:flex;
+       align-items:center;
+       gap:10px;
+       padding:0 14px;
+       border:1px solid #dce3ea;
+       border-radius:10px;
+       background:#f8fafc;
+       cursor:pointer;
+       margin:0;
+       box-sizing:border-box
+     ">
        <input id="saleTaxApply"
               type="checkbox"
               checked
-              onchange="saleCalc()">
-       Aplicar IVA 13%
+              onchange="saleCalc()"
+              style="
+                width:17px;
+                height:17px;
+                margin:0;
+                flex:0 0 auto
+              ">
+       <span style="font-weight:600;color:#334155">
+         Aplicar IVA 13%
+       </span>
      </label>
    </div>
 
  </div>
 
- <div class="card" style="margin-top:16px">
-   <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap">
+ <div class="card" style="
+   margin-top:18px;
+   padding:18px 20px;
+   background:#f8fafc;
+   border:1px solid #e5eaf0;
+   border-radius:14px
+ ">
+   <div style="
+     display:grid;
+     grid-template-columns:repeat(4,minmax(0,1fr));
+     gap:18px
+   ">
+
      <div>
-       <small>Subtotal</small>
-       <div id="saleSub" style="font-size:20px;font-weight:600">$0.00</div>
+       <small style="color:#64748b">Subtotal</small>
+       <div id="saleSub"
+            style="font-size:19px;font-weight:700;margin-top:4px">
+         $0.00
+       </div>
      </div>
 
      <div>
-       <small>Descuento</small>
-       <div id="saleDiscountAmount" style="font-size:20px;font-weight:600">$0.00</div>
+       <small style="color:#64748b">Descuento</small>
+       <div id="saleDiscountAmount"
+            style="font-size:19px;font-weight:700;margin-top:4px">
+         $0.00
+       </div>
      </div>
 
      <div>
-       <small>IVA 13%</small>
-       <div id="saleTax" style="font-size:20px;font-weight:600">$0.00</div>
+       <small style="color:#64748b">IVA 13%</small>
+       <div id="saleTax"
+            style="font-size:19px;font-weight:700;margin-top:4px">
+         $0.00
+       </div>
      </div>
 
-     <div>
-       <small>TOTAL</small>
-       <div id="saleTotal" style="font-size:26px;font-weight:700">$0.00</div>
+     <div style="
+       padding-left:18px;
+       border-left:1px solid #dce3ea
+     ">
+       <small style="color:#64748b;font-weight:700">TOTAL</small>
+       <div id="saleTotal"
+            style="font-size:26px;font-weight:800;margin-top:2px">
+         $0.00
+       </div>
      </div>
+
    </div>
  </div>
 
- <div class="actions">
+ <div class="actions" style="margin-top:18px">
    <button class="secondary" onclick="closeModal()">Cancelar</button>
-   <button class="primary" onclick="createSale('${orderId}')">Generar factura</button>
+   <button class="primary" onclick="createSale('${orderId}')">
+     Generar factura
+   </button>
  </div>
  `);
 
  saleCalc();
 }
 
-function saleCalc(){
 
- const o=db.orders.find(x=>x.id===document.querySelector('#salePrice')?.closest('.modal')?.dataset?.orderId)
-       ||db.orders.find(x=>x.id===window.__saleOrderId);
+function saleCalc(){
 
  const price=+$('salePrice')?.value||0;
  const dp=+$('saleDiscount')?.value||0;
 
- const order=o||db.orders.find(x=>x.id===window.__currentSaleOrderId);
+ const order=db.orders.find(
+   x=>x.id===window.__currentSaleOrderId
+ );
 
  const pax=order?.pax||1;
  const subtotal=pax*price;
@@ -2282,60 +2352,366 @@ function saleCalc(){
 
  const x=calc(subtotal-discount,applyTax);
 
- if($('saleSub'))$('saleSub').textContent=money(subtotal);
- if($('saleDiscountAmount'))$('saleDiscountAmount').textContent='-'+money(discount);
- if($('saleTax'))$('saleTax').textContent=applyTax?money(x.tax):'No aplica';
- if($('saleTotal'))$('saleTotal').textContent=money(x.total);
+ if($('saleSub'))
+   $('saleSub').textContent=money(subtotal);
+
+ if($('saleDiscountAmount'))
+   $('saleDiscountAmount').textContent='-'+money(discount);
+
+ if($('saleTax'))
+   $('saleTax').textContent=applyTax
+     ?money(x.tax)
+     :'No aplica';
+
+ if($('saleTotal'))
+   $('saleTotal').textContent=money(x.total);
 }
 
+
 function createSale(orderId){
- const o=db.orders.find(x=>x.id===orderId),price=+$('salePrice').value||0,dp=+$('saleDiscount').value||0;
- if(price<=0)return alert('Ingrese el precio de venta.');
- const subtotal=o.pax*price,discount=subtotal*dp/100,applyTax=$('saleTaxApply')?.checked!==false,x=calc(subtotal-discount,applyTax);
- const s={id:uid(),number:next('V'),op:o.op,orderId:o.id,clientId:o.clientId,customerName:o.customerName,tourId:o.tourId,tour:o.tour,sellerId:o.sellerId,seller:o.seller,serviceDate:o.serviceDate,pax:o.pax,unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:o.currency};
- db.sales.push(s);o.saleId=s.id;saveDB();closeModal();alert('Factura '+s.number+' creada.');
+
+ const o=db.orders.find(x=>x.id===orderId);
+
+ if(!o)return;
+
+ const price=+$('salePrice').value||0;
+ const dp=+$('saleDiscount').value||0;
+ const paymentMethod=$('salePaymentMethod')?.value||'';
+
+ if(price<=0)
+   return alert('Ingrese el precio de venta.');
+
+ if(!paymentMethod)
+   return alert('Seleccione el medio de pago.');
+
+ const subtotal=o.pax*price;
+ const discount=subtotal*dp/100;
+ const applyTax=$('saleTaxApply')?.checked!==false;
+ const x=calc(subtotal-discount,applyTax);
+
+ const s={
+   id:uid(),
+   number:next('V'),
+   op:o.op,
+   orderId:o.id,
+   clientId:o.clientId,
+   customerName:o.customerName,
+   tourId:o.tourId,
+   tour:o.tour,
+   sellerId:o.sellerId,
+   seller:o.seller,
+   serviceDate:o.serviceDate,
+   pax:o.pax,
+   unitPrice:price,
+   discount:dp,
+   subtotal,
+   discountAmount:discount,
+   taxableAmount:subtotal-discount,
+   taxRate:applyTax?13:0,
+   tax:x.tax,
+   total:x.total,
+   currency:o.currency,
+   paymentMethod
+ };
+
+ db.sales.push(s);
+ o.saleId=s.id;
+
+ saveDB();
+ closeModal();
+
+ alert('Factura '+s.number+' creada.');
 }
+
+
 function editSaleForm(id){
+
  const s=db.sales.find(x=>x.id===id);
+
  if(!s)return;
- modal('Editar factura '+s.number,`<div class="grid">
- <div class="field"><label>Cliente</label><input disabled value="${esc(s.customerName)}"></div>
- <div class="field"><label>Tour</label><input disabled value="${esc(s.tour)}"></div>
- <div class="field"><label>Precio de venta unitario *</label><input id="saleEditPrice" data-sale-id="${s.id}" type="number" step=".01" value="${s.unitPrice||0}"></div>
- <div class="field"><label>Descuento %</label><input id="saleEditDiscount" type="number" step=".01" value="${s.discount||0}"></div>
- <div class="field"><label style="display:flex;align-items:center;gap:8px;margin-top:28px"><input id="saleEditTaxApply" type="checkbox" ${Number(s.taxRate||0)>0?'checked':''}> Aplicar IVA 13%</label></div>
+
+ const paymentOptions=[
+   ['', 'No registrado'],
+   ['Cash','Cash'],
+   ['Compra Click','Compra Click'],
+   ['Tarjeta','Tarjeta']
+ ].map(([value,label])=>
+   `<option value="${value}" ${s.paymentMethod===value?'selected':''}>${label}</option>`
+ ).join('');
+
+ modal('Editar factura '+s.number,`
+
+ <div style="margin-bottom:18px">
+   <div style="font-size:13px;color:#64748b">
+     Actualice únicamente los datos que necesite modificar
+   </div>
  </div>
- <div class="card">Subtotal: <b id="saleEditSub"></b> · IVA 13%: <b id="saleEditTax"></b> · TOTAL: <b id="saleEditTotal"></b></div>
- <div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveSaleEdit('${id}')">Guardar cambios</button></div>`);
+
+ <div class="grid" style="gap:14px">
+
+   <div class="field">
+     <label>Cliente</label>
+     <input disabled
+            value="${esc(s.customerName)}"
+            style="background:#f8fafc">
+   </div>
+
+   <div class="field">
+     <label>Tour</label>
+     <input disabled
+            value="${esc(s.tour)}"
+            style="background:#f8fafc">
+   </div>
+
+   <div class="field">
+     <label>Precio de venta unitario *</label>
+     <input id="saleEditPrice"
+            data-sale-id="${s.id}"
+            type="number"
+            step=".01"
+            min="0"
+            value="${s.unitPrice||0}"
+            oninput="saleEditCalc()">
+   </div>
+
+   <div class="field">
+     <label>Descuento %</label>
+     <input id="saleEditDiscount"
+            type="number"
+            step=".01"
+            min="0"
+            value="${s.discount||0}"
+            oninput="saleEditCalc()">
+   </div>
+
+   <div class="field">
+     <label>Medio de pago</label>
+     <select id="saleEditPaymentMethod">
+       ${paymentOptions}
+     </select>
+   </div>
+
+   <div class="field">
+     <label>Impuestos</label>
+
+     <label style="
+       min-height:46px;
+       display:flex;
+       align-items:center;
+       gap:10px;
+       padding:0 14px;
+       border:1px solid #dce3ea;
+       border-radius:10px;
+       background:#f8fafc;
+       cursor:pointer;
+       margin:0;
+       box-sizing:border-box
+     ">
+       <input id="saleEditTaxApply"
+              type="checkbox"
+              ${Number(s.taxRate||0)>0?'checked':''}
+              onchange="saleEditCalc()"
+              style="
+                width:17px;
+                height:17px;
+                margin:0;
+                flex:0 0 auto
+              ">
+       <span style="font-weight:600;color:#334155">
+         Aplicar IVA 13%
+       </span>
+     </label>
+   </div>
+
+ </div>
+
+ <div class="card" style="
+   margin-top:18px;
+   padding:18px 20px;
+   background:#f8fafc;
+   border:1px solid #e5eaf0;
+   border-radius:14px
+ ">
+   <div style="
+     display:grid;
+     grid-template-columns:repeat(3,minmax(0,1fr));
+     gap:18px
+   ">
+     <div>
+       <small style="color:#64748b">Subtotal</small>
+       <div id="saleEditSub"
+            style="font-size:19px;font-weight:700;margin-top:4px">
+       </div>
+     </div>
+
+     <div>
+       <small style="color:#64748b">IVA 13%</small>
+       <div id="saleEditTax"
+            style="font-size:19px;font-weight:700;margin-top:4px">
+       </div>
+     </div>
+
+     <div style="
+       padding-left:18px;
+       border-left:1px solid #dce3ea
+     ">
+       <small style="color:#64748b;font-weight:700">TOTAL</small>
+       <div id="saleEditTotal"
+            style="font-size:26px;font-weight:800;margin-top:2px">
+       </div>
+     </div>
+   </div>
+ </div>
+
+ <div class="actions" style="margin-top:18px">
+   <button class="secondary" onclick="closeModal()">Cancelar</button>
+   <button class="primary" onclick="saveSaleEdit('${id}')">
+     Guardar cambios
+   </button>
+ </div>
+ `);
+
  saleEditCalc();
 }
 
+
 function saleEditCalc(){
- const s=db.sales.find(x=>x.id===$('saleEditPrice')?.dataset?.saleId);
- const price=+$('saleEditPrice')?.value||0,dp=+$('saleEditDiscount')?.value||0;
- const order=s?db.orders.find(x=>x.id===s.orderId):null;
+
+ const s=db.sales.find(
+   x=>x.id===$('saleEditPrice')?.dataset?.saleId
+ );
+
+ const price=+$('saleEditPrice')?.value||0;
+ const dp=+$('saleEditDiscount')?.value||0;
+
+ const order=s
+   ?db.orders.find(x=>x.id===s.orderId)
+   :null;
+
  const pax=order?.pax||s?.pax||1;
  const applyTax=$('saleEditTaxApply')?.checked!==false;
- const subtotal=pax*price,discount=subtotal*dp/100,x=calc(subtotal-discount,applyTax);
- if($('saleEditSub'))$('saleEditSub').textContent=money(x.subtotal);
- if($('saleEditTax'))$('saleEditTax').textContent=money(x.tax);
- if($('saleEditTotal'))$('saleEditTotal').textContent=money(x.total);
+
+ const subtotal=pax*price;
+ const discount=subtotal*dp/100;
+ const x=calc(subtotal-discount,applyTax);
+
+ if($('saleEditSub'))
+   $('saleEditSub').textContent=money(subtotal);
+
+ if($('saleEditTax'))
+   $('saleEditTax').textContent=applyTax
+     ?money(x.tax)
+     :'No aplica';
+
+ if($('saleEditTotal'))
+   $('saleEditTotal').textContent=money(x.total);
 }
+
 
 async function saveSaleEdit(id){
+
  const s=db.sales.find(x=>x.id===id);
+
  if(!s)return;
- const price=+$('saleEditPrice').value||0,dp=+$('saleEditDiscount').value||0;
- if(price<=0)return alert('Ingrese el precio de venta.');
+
+ const price=+$('saleEditPrice').value||0;
+ const dp=+$('saleEditDiscount').value||0;
+ const paymentMethod=$('saleEditPaymentMethod')?.value||'';
+
+ if(price<=0)
+   return alert('Ingrese el precio de venta.');
+
  const applyTax=$('saleEditTaxApply')?.checked!==false;
- const subtotal=(s.pax||1)*price,discount=subtotal*dp/100,x=calc(subtotal-discount,applyTax);
- Object.assign(s,{unitPrice:price,discount:dp,subtotal,discountAmount:discount,taxableAmount:subtotal-discount,taxRate:applyTax?13:0,tax:x.tax,total:x.total});
- saveDB();closeModal();alert('Factura '+s.number+' actualizada.');
+
+ const subtotal=(s.pax||1)*price;
+ const discount=subtotal*dp/100;
+ const x=calc(subtotal-discount,applyTax);
+
+ Object.assign(s,{
+   unitPrice:price,
+   discount:dp,
+   subtotal,
+   discountAmount:discount,
+   taxableAmount:subtotal-discount,
+   taxRate:applyTax?13:0,
+   tax:x.tax,
+   total:x.total,
+   paymentMethod
+ });
+
+ await saveDB();
+ closeModal();
+
+ alert('Factura '+s.number+' actualizada.');
 }
 
-function saleDoc(s,ticket=false){const base=company('FACTURA INTERNA DE VENTA');return ticket?`<div class="ticket">${base}<b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Servicio:</b> ${s.serviceDate}<hr>Subtotal ${money(s.subtotal)}<br>Descuento -${money(s.discountAmount)}<br>${Number(s.taxRate||0)>0?'IVA 13% '+money(s.tax):'IVA: No aplica'}<br><b>TOTAL ${money(s.total)}</b></div>`:`<div class="document">${base}<div class="meta"><b>Factura:</b> ${s.number}<br><b>Operación:</b> ${s.op}<br><b>Cliente:</b> ${esc(s.customerName)}<br><b>Vendedor:</b> ${esc(s.seller)}<br><b>Tour:</b> ${esc(s.tour)}<br><b>Fecha de servicio:</b> ${s.serviceDate}<br><b>Pasajeros:</b> ${s.pax}</div><hr>Subtotal: ${money(s.subtotal)}<br>Descuento: -${money(s.discountAmount)}<br>${Number(s.taxRate||0)>0?'IVA 13%: '+money(s.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(s.total)}</div></div>`}
-function previewSale(id){const s=db.sales.find(x=>x.id===id);if(s)preview('Vista previa — '+s.number,saleDoc(s),`printSale('${id}')`)}
-function printSale(id){const s=db.sales.find(x=>x.id===id);if(s)printRaw(saleDoc(s,true))}
+
+function saleDoc(s,ticket=false){
+
+ const base=company('FACTURA INTERNA DE VENTA');
+ const method=esc(s.paymentMethod||'No registrado');
+
+ return ticket
+ ?`<div class="ticket">
+     ${base}
+     <b>Factura:</b> ${s.number}<br>
+     <b>Operación:</b> ${s.op}<br>
+     <b>Cliente:</b> ${esc(s.customerName)}<br>
+     <b>Vendedor:</b> ${esc(s.seller)}<br>
+     <b>Tour:</b> ${esc(s.tour)}<br>
+     <b>Servicio:</b> ${dateOnly(s.serviceDate).split('-').reverse().join('/')}<br>
+     <b>Medio de pago:</b> ${method}
+     <hr>
+     Subtotal ${money(s.subtotal)}<br>
+     Descuento -${money(s.discountAmount)}<br>
+     ${Number(s.taxRate||0)>0
+       ?'IVA 13% '+money(s.tax)
+       :'IVA: No aplica'}
+     <br>
+     <b>TOTAL ${money(s.total)}</b>
+   </div>`
+ :`<div class="document">
+     ${base}
+     <div class="meta">
+       <b>Factura:</b> ${s.number}<br>
+       <b>Operación:</b> ${s.op}<br>
+       <b>Cliente:</b> ${esc(s.customerName)}<br>
+       <b>Vendedor:</b> ${esc(s.seller)}<br>
+       <b>Tour:</b> ${esc(s.tour)}<br>
+       <b>Fecha de servicio:</b> ${dateOnly(s.serviceDate).split('-').reverse().join('/')}<br>
+       <b>Pasajeros:</b> ${s.pax}<br>
+       <b>Medio de pago:</b> ${method}
+     </div>
+     <hr>
+     Subtotal: ${money(s.subtotal)}<br>
+     Descuento: -${money(s.discountAmount)}<br>
+     ${Number(s.taxRate||0)>0
+       ?'IVA 13%: '+money(s.tax)
+       :'IVA: No aplica'}
+     <div class="total">
+       TOTAL: ${money(s.total)}
+     </div>
+   </div>`;
+}
+
+
+function previewSale(id){
+ const s=db.sales.find(x=>x.id===id);
+ if(s)
+   preview(
+     'Vista previa — '+s.number,
+     saleDoc(s),
+     `printSale('${id}')`
+   );
+}
+
+
+function printSale(id){
+ const s=db.sales.find(x=>x.id===id);
+ if(s)
+   printRaw(saleDoc(s,true));
+}
+
 
 function reports(){return `<div class="toolbar"><h2>Reportes</h2></div><div class="card"><button class="primary" onclick="reportTab('future')">1. Tours por fecha de servicio</button> <button class="secondary" onclick="reportTab('seller')">2. Vendedores</button> <button class="secondary" onclick="reportTab('analysis')">3. Análisis de ventas</button></div>
 <div id="repFuture" class="report active card"><h3>Tours por fecha de servicio</h3><p>La fecha utilizada es la fecha en que se debe operar el tour, no la fecha de venta.</p><div class="filters"><div class="field"><label>Desde</label><input id="rFutureFrom" type="date"></div><div class="field"><label>Hasta</label><input id="rFutureTo" type="date"></div><button class="secondary" onclick="renderReports()">Actualizar</button><button class="secondary" onclick="exportFuture()">Excel</button></div><div id="futureResult"></div></div>
