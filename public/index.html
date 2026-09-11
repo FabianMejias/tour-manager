@@ -1069,7 +1069,7 @@ function dashboard(){
              <tr>
                <td><b>${esc(o.number)}</b></td>
                <td>${esc(o.customerName||'-')}</td>
-               <td>${esc(o.tour||'-')}</td>
+               <td>${esc(tmOrderServiceLabel(o))}</td>
                <td>${esc(supplier(o.supplierId)||'-')}</td>
                <td>
                  ${displayServiceDate(o.serviceDate)}
@@ -1111,6 +1111,107 @@ function tmOrderSearchText(v){
     .toLowerCase()
     .trim();
 }
+
+function tmOrderItems(o){
+
+  return Array.isArray(o?.items)
+    ? o.items.filter(Boolean)
+    : [];
+
+}
+
+
+function tmOrderItemName(item){
+
+  return (
+    item?.tour ||
+    item?.description ||
+    db.tours.find(t=>t.id===item?.tourId)?.name ||
+    ''
+  );
+
+}
+
+
+function tmOrderServiceNames(o){
+
+  const items=tmOrderItems(o);
+
+  if(!items.length){
+    return o?.tour||'';
+  }
+
+  return items
+    .map(tmOrderItemName)
+    .filter(Boolean)
+    .join(' ');
+
+}
+
+
+function tmOrderServiceDisplay(o){
+
+  const items=tmOrderItems(o);
+
+  if(!items.length){
+    return {
+      title:o?.tour||'Sin servicio',
+      detail:'',
+      count:0
+    };
+  }
+
+  const names=
+    items
+      .map(tmOrderItemName)
+      .filter(Boolean);
+
+  if(items.length===1){
+    return {
+      title:names[0]||'Servicio',
+      detail:'',
+      count:1
+    };
+  }
+
+  return {
+    title:`${items.length} servicios`,
+    detail:names.join(' · '),
+    count:items.length
+  };
+
+}
+
+
+function tmOrderServiceLabel(o){
+
+  const display=tmOrderServiceDisplay(o);
+
+  if(display.count>1){
+    return `${display.title}: ${display.detail}`;
+  }
+
+  return display.title||'Sin servicio';
+
+}
+
+
+function tmOrderPassengerTotal(o){
+
+  const items=tmOrderItems(o);
+
+  if(!items.length){
+    return Number(o?.pax||0);
+  }
+
+  return items.reduce(
+    (sum,item)=>
+      sum + Number(item?.quantity||0),
+    0
+  );
+
+}
+
 
 function filterOrderRows(){
 
@@ -1412,8 +1513,7 @@ function orders(){
       o.number,
       o.op,
       o.customerName,
-      o.client,
-      o.tour,
+      o.client,      tmOrderServiceNames(o),
       supplier(o.supplierId),
       o.seller
     ].join(' '));
@@ -1946,12 +2046,17 @@ function orders(){
                     const status=o.status||'active';
                     const cancelled=status==='cancelled';
 
+                  const serviceDisplay=
+                    tmOrderServiceDisplay(o);
+
+                  const passengerTotal=
+                    tmOrderPassengerTotal(o);
+
                     const searchText=tmOrderSearchText([
                       o.number,
                       o.op,
                       o.customerName,
-                      o.client,
-                      o.tour,
+                      o.client,                      tmOrderServiceNames(o),
                       supplier(o.supplierId),
                       o.seller
                     ].join(' '));
@@ -1994,13 +2099,29 @@ function orders(){
                         <td>
 
                           <div class="tm-oc-main">
-                            ${esc(o.tour)}
+                            ${esc(serviceDisplay.title)}
                           </div>
+
+                          ${
+                            serviceDisplay.detail
+                            ? `
+                              <div
+                                class="tm-oc-sub"
+                                style="
+                                  margin-top:3px;
+                                  white-space:normal;
+                                  line-height:1.35;
+                                ">
+                                ${esc(serviceDisplay.detail)}
+                              </div>
+                            `
+                            : ''
+                          }
 
                           <div class="tm-oc-service-info">
                             ${displayServiceDate(o.serviceDate)}
                             · ${formatServiceTime(o.time)}
-                            · ${Number(o.pax||0)} pax
+                            · ${passengerTotal} pax
                           </div>
 
                         </td>
@@ -2403,6 +2524,19 @@ function orderForm(id=null){
 
   window.tmEditingOrder=!!o;
 
+  const hasOrderItems=
+    !!o &&
+    Array.isArray(o.items) &&
+    o.items.length>0;
+
+  // OC histórica: no tiene detalle en purchase_order_items.
+  window.tmLegacyOrderEdit=
+    !!o && !hasOrderItems;
+
+  // OC nueva o moderna con detalle.
+  window.tmMultiServiceOrder=
+    !o || hasOrderItems;
+
   const tp=timeParts(o?.time||'');
 
   const defaultTour=
@@ -2584,6 +2718,88 @@ function orderForm(id=null){
       .tm-oc-tax-box input{
         width:auto;
         margin:0;
+      }
+
+
+      .tm-oc-items{
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+      }
+
+      .tm-oc-item-head{
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 125px 105px 40px;
+        gap:10px;
+        padding:0 12px 6px;
+        color:#64748b;
+        font-size:9px;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.03em;
+      }
+
+      .tm-oc-item{
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 125px 105px 40px;
+        gap:10px;
+        align-items:start;
+        padding:12px;
+        border:1px solid #dfe8e7;
+        border-radius:11px;
+        background:#fbfdfd;
+      }
+
+      .tm-oc-item-total{
+        min-height:42px;
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        color:#176e69;
+        font-size:12px;
+        font-weight:850;
+      }
+
+      .tm-oc-item-remove{
+        width:38px;
+        height:38px;
+        padding:0;
+        border:1px solid #efd0d0;
+        border-radius:8px;
+        background:#fff7f7;
+        color:#b42318;
+        font-size:18px;
+        cursor:pointer;
+      }
+
+      .tm-oc-item-remove:hover{
+        background:#feecec;
+      }
+
+      .tm-oc-add-service{
+        margin-top:11px;
+        border:1px dashed #8ebdb8 !important;
+        background:#f5fbfa !important;
+        color:#137f78 !important;
+        font-weight:800;
+      }
+
+      @media(max-width:850px){
+        .tm-oc-item-head{
+          display:none;
+        }
+
+        .tm-oc-item{
+          grid-template-columns:1fr 1fr;
+        }
+
+        .tm-oc-item-service{
+          grid-column:1/-1;
+        }
+
+        .tm-oc-item-total{
+          justify-content:flex-start;
+        }
       }
 
       .tm-oc-summary{
@@ -3079,29 +3295,31 @@ function orderForm(id=null){
 
                 </div>
 
-                <div class="field">
+                ${
+                  window.tmLegacyOrderEdit
+                  ? `
+                    <div class="field">
+                      <label>Tour</label>
 
-                  <label>
-                    Tour
-                  </label>
+                      <select
+                        id="ocTour"
+                        onchange="orderCostFromTour()">
 
-                  <select
-                    id="ocTour"
-                    onchange="orderCostFromTour()">
+                        ${
+                          db.tours.map(t=>`
+                            <option
+                              value="${t.id}"
+                              ${t.id===o?.tourId?'selected':''}>
+                              ${esc(t.name)}
+                            </option>
+                          `).join('')
+                        }
 
-                    ${
-                      db.tours.map(t=>`
-                        <option
-                          value="${t.id}"
-                          ${t.id===o?.tourId?'selected':''}>
-                          ${esc(t.name)}
-                        </option>
-                      `).join('')
-                    }
-
-                  </select>
-
-                </div>
+                      </select>
+                    </div>
+                  `
+                  : ''
+                }
 
                 <div class="field">
 
@@ -3172,12 +3390,76 @@ function orderForm(id=null){
           </div>
 
 
+          ${
+            window.tmMultiServiceOrder
+            ? `
+              <div class="tm-oc-form-card">
+
+                <div class="tm-oc-form-card-head">
+
+                  <div class="tm-oc-form-card-icon">
+                    02
+                  </div>
+
+                  <div>
+                    <div class="tm-oc-form-card-title">
+                      Servicios de la orden
+                    </div>
+
+                    <div class="tm-oc-form-card-subtitle">
+                      Uno o varios servicios del mismo proveedor
+                    </div>
+                  </div>
+
+                </div>
+
+                <div class="tm-oc-form-card-body">
+
+                  <div class="tm-oc-item-head">
+                    <span>Servicio / Tour</span>
+                    <span>Cantidad</span>
+                    <span>Costo</span>
+                    <span style="text-align:right">Total</span>
+                    <span></span>
+                  </div>
+
+                  <div
+                    id="ocItems"
+                    class="tm-oc-items">
+
+                    ${
+                      hasOrderItems
+                      ? o.items.map(item=>
+                          orderItemRowHTML(item)
+                        ).join('')
+                      : orderItemRowHTML({
+                          tourId:defaultTour?.id||'',
+                          quantity:1,
+                          unitCost:defaultTour?.cost||0
+                        })
+                    }
+
+                  </div>
+
+                  <button
+                    type="button"
+                    class="secondary tm-oc-add-service"
+                    onclick="addOrderItem()">
+                    + Agregar servicio
+                  </button>
+
+                </div>
+              </div>
+            `
+            : ''
+          }
+
           <div class="tm-oc-form-card">
 
             <div class="tm-oc-form-card-head">
 
               <div class="tm-oc-form-card-icon">
-                02
+                ${window.tmLegacyOrderEdit ? '02' : '03'}
               </div>
 
               <div>
@@ -3299,20 +3581,22 @@ function orderForm(id=null){
 
                 </div>
 
-                <div class="field">
+                ${
+                  window.tmLegacyOrderEdit
+                  ? `
+                    <div class="field">
+                      <label>Pasajeros</label>
 
-                  <label>
-                    Pasajeros
-                  </label>
-
-                  <input
-                    id="ocPax"
-                    type="number"
-                    min="1"
-                    value="${o?.pax||1}"
-                    oninput="orderCalc()">
-
-                </div>
+                      <input
+                        id="ocPax"
+                        type="number"
+                        min="1"
+                        value="${o?.pax||1}"
+                        oninput="orderCalc()">
+                    </div>
+                  `
+                  : ''
+                }
 
               </div>
 
@@ -3326,7 +3610,7 @@ function orderForm(id=null){
             <div class="tm-oc-form-card-head">
 
               <div class="tm-oc-form-card-icon">
-                03
+                ${window.tmLegacyOrderEdit ? '03' : '04'}
               </div>
 
               <div>
@@ -3345,25 +3629,27 @@ function orderForm(id=null){
 
               <div class="tm-oc-grid-3">
 
-                <div class="field">
+                ${
+                  window.tmLegacyOrderEdit
+                  ? `
+                    <div class="field">
+                      <label>Costo unitario</label>
 
-                  <label>
-                    Costo unitario
-                  </label>
+                      <input
+                        id="ocCost"
+                        type="number"
+                        step=".01"
+                        value="${initialCost}"
+                        oninput="orderCalc()">
 
-                  <input
-                    id="ocCost"
-                    type="number"
-                    step=".01"
-                    value="${initialCost}"
-                    oninput="orderCalc()">
-
-                  <small
-                    id="tm-oc-rate-info"
-                    class="tm-oc-rate-info">
-                  </small>
-
-                </div>
+                      <small
+                        id="tm-oc-rate-info"
+                        class="tm-oc-rate-info">
+                      </small>
+                    </div>
+                  `
+                  : ''
+                }
 
                 <div class="field">
 
@@ -3443,7 +3729,7 @@ function orderForm(id=null){
             </b>
 
             <small>
-              Cálculo automático según pasajeros y costo
+              Cálculo automático según servicios y cantidades
             </small>
 
           </div>
@@ -3540,107 +3826,629 @@ function orderForm(id=null){
 }
 
 
+function orderItemRowHTML(item={}){
+
+  const tourId=
+    item.tourId ||
+    db.tours[0]?.id ||
+    '';
+
+  const tour=
+    db.tours.find(t=>t.id===tourId) ||
+    db.tours[0];
+
+  const quantity=
+    Number(item.quantity||1);
+
+  const unitCost=
+    Number(
+      item.unitCost ??
+      tour?.cost ??
+      0
+    );
+
+  return `
+    <div
+      class="tm-oc-item"
+      data-oc-item-row
+      data-item-id="${esc(item.id||'')}">
+
+      <div class="tm-oc-item-service">
+
+        <select
+          class="oc-item-tour"
+          onchange="orderItemCostFromTour(this)">
+
+          ${
+            db.tours.map(t=>`
+              <option
+                value="${t.id}"
+                ${t.id===tourId?'selected':''}>
+                ${esc(t.name)}
+              </option>
+            `).join('')
+          }
+
+        </select>
+
+        <small
+          class="tm-oc-rate-info oc-item-rate-info">
+        </small>
+
+      </div>
+
+      <div>
+        <input
+          class="oc-item-qty"
+          type="number"
+          min="1"
+          step="1"
+          value="${quantity}"
+          oninput="orderCalc()">
+      </div>
+
+      <div>
+        <input
+          class="oc-item-cost"
+          type="number"
+          min="0"
+          step=".01"
+          value="${unitCost.toFixed(2)}"
+          oninput="orderCalc()">
+      </div>
+
+      <div class="tm-oc-item-total">
+        <span class="oc-item-total">
+          ${money(quantity*unitCost)}
+        </span>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          class="tm-oc-item-remove"
+          title="Eliminar servicio"
+          onclick="removeOrderItem(this)">
+          ×
+        </button>
+      </div>
+
+    </div>
+  `;
+}
+
+
+function addOrderItem(){
+
+  const box=$('ocItems');
+
+  if(!box)return;
+
+  const t=db.tours[0];
+
+  box.insertAdjacentHTML(
+    'beforeend',
+    orderItemRowHTML({
+      tourId:t?.id||'',
+      quantity:1,
+      unitCost:t?.cost||0
+    })
+  );
+
+  const rows=
+    box.querySelectorAll(
+      '[data-oc-item-row]'
+    );
+
+  const row=rows[rows.length-1];
+
+  const select=
+    row?.querySelector(
+      '.oc-item-tour'
+    );
+
+  if(select){
+    orderItemCostFromTour(select);
+  }
+
+  orderCalc();
+}
+
+
+function removeOrderItem(btn){
+
+  const rows=[
+    ...document.querySelectorAll(
+      '#ocItems [data-oc-item-row]'
+    )
+  ];
+
+  if(rows.length<=1){
+    alert(
+      'La orden debe tener al menos un servicio.'
+    );
+    return;
+  }
+
+  btn
+    .closest('[data-oc-item-row]')
+    ?.remove();
+
+  orderCalc();
+}
+
+
+async function orderItemCostFromTour(el){
+
+  const row=
+    el?.closest(
+      '[data-oc-item-row]'
+    );
+
+  if(!row)return;
+
+  const tourId=
+    row.querySelector(
+      '.oc-item-tour'
+    )?.value||'';
+
+  const serviceDate=
+    $('ocService')?.value||'';
+
+  const costInput=
+    row.querySelector(
+      '.oc-item-cost'
+    );
+
+  const info=
+    row.querySelector(
+      '.oc-item-rate-info'
+    );
+
+  const t=
+    db.tours.find(
+      x=>x.id===tourId
+    );
+
+  if(!tourId||!costInput){
+    orderCalc();
+    return;
+  }
+
+  if(!serviceDate){
+
+    costInput.value=
+      Number(
+        t?.cost||0
+      ).toFixed(2);
+
+    if(info){
+      info.innerHTML=
+        '<span style="color:#64748b">' +
+        'Seleccione la fecha para validar tarifa.' +
+        '</span>';
+    }
+
+    orderCalc();
+    return;
+  }
+
+  try{
+
+    const response=
+      await fetch(
+        '/api/tour-rates/' +
+        encodeURIComponent(tourId)
+      );
+
+    const data=
+      await response
+        .json()
+        .catch(()=>({}));
+
+    if(!response.ok){
+      throw new Error(
+        data.error ||
+        'No fue posible consultar las tarifas.'
+      );
+    }
+
+    const rates=data.rates||[];
+
+    const rate=rates
+      .filter(r=>
+        r.active &&
+        String(r.validFrom||'')
+          .slice(0,10)<=serviceDate &&
+        String(r.validTo||'')
+          .slice(0,10)>=serviceDate
+      )
+      .sort((a,b)=>
+        String(b.validFrom||'')
+          .localeCompare(
+            String(a.validFrom||'')
+          )
+      )[0];
+
+    if(rate){
+
+      costInput.value=
+        Number(
+          rate.cost||0
+        ).toFixed(2);
+
+      if(info){
+        info.innerHTML=
+          '<span style="color:#14877f;font-weight:700">' +
+          '✓ Tarifa aplicada</span> ' +
+          rateDate(rate.validFrom) +
+          ' al ' +
+          rateDate(rate.validTo);
+      }
+
+    }else{
+
+      if(info){
+        info.innerHTML=
+          '<span style="color:#b45309;font-weight:700">' +
+          '⚠ Sin tarifa configurada</span>';
+      }
+
+      if(!costInput.value){
+        costInput.value=
+          Number(
+            t?.cost||0
+          ).toFixed(2);
+      }
+    }
+
+  }catch(e){
+
+    if(info){
+      info.innerHTML=
+        '<span style="color:#b91c1c;font-weight:700">' +
+        'No se pudo consultar la tarifa.' +
+        '</span>';
+    }
+  }
+
+  orderCalc();
+}
+
+
 async function orderCostFromTour(){
 
- const tourId=$('ocTour')?.value||'';
- const serviceDate=$('ocService')?.value||'';
- const costInput=$('ocCost');
- const info=$('tm-oc-rate-info');
+  // OC histórica:
+  // nunca sustituir automáticamente su costo.
+  if(window.tmLegacyOrderEdit===true){
+    orderCalc();
+    return;
+  }
 
- if(!tourId||!serviceDate||!costInput){
-   orderCalc();
-   return;
- }
+  const selects=[
+    ...document.querySelectorAll(
+      '#ocItems .oc-item-tour'
+    )
+  ];
 
- // En una OC existente NO cambiamos automáticamente el costo.
- // La tarifa por vigencia se aplica únicamente al crear una OC nueva.
- const editing=window.tmEditingOrder===true;
+  for(const select of selects){
+    await orderItemCostFromTour(select);
+  }
 
- if(editing){
-   orderCalc();
-   return;
- }
-
- try{
-
-   // Consulta directa a la API.
-   // No depende de la función global api().
-   const response=await fetch(
-     '/api/tour-rates/'+encodeURIComponent(tourId)
-   );
-
-   const data=await response.json().catch(()=>({}));
-
-   if(!response.ok){
-     throw new Error(
-       data.error||'No fue posible consultar las tarifas.'
-     );
-   }
-
-   const rates=data.rates||[];
-
-   const rate=rates
-     .filter(r=>
-       r.active &&
-       String(r.validFrom||'').slice(0,10)<=serviceDate &&
-       String(r.validTo||'').slice(0,10)>=serviceDate
-     )
-     .sort((a,b)=>
-       String(b.validFrom||'').localeCompare(
-         String(a.validFrom||'')
-       )
-     )[0];
-
-   if(rate){
-
-     costInput.value=Number(rate.cost||0).toFixed(2);
-
-     if(info){
-       info.innerHTML=
-         '<span style="color:#14877f;font-weight:700">✓ Tarifa aplicada</span> '+
-         rateDate(rate.validFrom)+
-         ' al '+
-         rateDate(rate.validTo)+
-         ' · Costo: '+
-         money(rate.cost);
-     }
-
-   }else{
-
-     if(info){
-       info.innerHTML=
-         '<span style="color:#b45309;font-weight:700">⚠ Sin tarifa configurada</span> '+
-         'para este tour en la fecha seleccionada. '+
-         'Puede ingresar el costo manualmente.';
-     }
-
-     const t=db.tours.find(x=>x.id===tourId);
-
-     if(t && !costInput.value){
-       costInput.value=Number(t.cost||0).toFixed(2);
-     }
-   }
-
- }catch(e){
-
-   if(info){
-     info.innerHTML=
-       '<span style="color:#b91c1c;font-weight:700">No se pudo consultar la tarifa.</span> '+
-       esc(e.message||'Error de conexión.');
-   }
-
- }
-
- orderCalc();
-
+  orderCalc();
 }
-function orderCalc(){const base=(+$('ocPax')?.value||0)*(+$('ocCost')?.value||0);const x=calc(base,$('ocTaxApply')?.checked!==false);$('ocSub').textContent=money(x.subtotal);$('ocTax').textContent=money(x.tax);$('ocTotal').textContent=money(x.total)}
+
+
+function orderCalc(){
+
+  // Edición histórica.
+  if(window.tmLegacyOrderEdit===true){
+
+    const base=
+      (+$('ocPax')?.value||0) *
+      (+$('ocCost')?.value||0);
+
+    const x=calc(
+      base,
+      $('ocTaxApply')?.checked!==false
+    );
+
+    if($('ocSub')){
+      $('ocSub').textContent=
+        money(x.subtotal);
+    }
+
+    if($('ocTax')){
+      $('ocTax').textContent=
+        money(x.tax);
+    }
+
+    if($('ocTotal')){
+      $('ocTotal').textContent=
+        money(x.total);
+    }
+
+    return;
+  }
+
+  let subtotal=0;
+
+  const rows=[
+    ...document.querySelectorAll(
+      '#ocItems [data-oc-item-row]'
+    )
+  ];
+
+  for(const row of rows){
+
+    const qty=
+      Number(
+        row.querySelector(
+          '.oc-item-qty'
+        )?.value||0
+      );
+
+    const cost=
+      Number(
+        row.querySelector(
+          '.oc-item-cost'
+        )?.value||0
+      );
+
+    const lineSubtotal=
+      qty*cost;
+
+    subtotal+=lineSubtotal;
+
+    const totalEl=
+      row.querySelector(
+        '.oc-item-total'
+      );
+
+    if(totalEl){
+      totalEl.textContent=
+        money(lineSubtotal);
+    }
+  }
+
+  const x=calc(
+    subtotal,
+    $('ocTaxApply')?.checked!==false
+  );
+
+  if($('ocSub')){
+    $('ocSub').textContent=
+      money(x.subtotal);
+  }
+
+  if($('ocTax')){
+    $('ocTax').textContent=
+      money(x.tax);
+  }
+
+  if($('ocTotal')){
+    $('ocTotal').textContent=
+      money(x.total);
+  }
+}
+
+
 function orderData(){
- const sellerId=$('ocSeller').value,passenger=$('ocPassenger').value.trim(),service=$('ocService').value;
- if(!sellerId)return alert('Debe seleccionar un vendedor.'); if(!passenger||!service)return alert('Complete el nombre del cliente/pasajero y la fecha de servicio.');
- const t=db.tours.find(x=>x.id===$('ocTour').value),c=db.clients.find(x=>x.id===$('ocClient').value),applyTax=$('ocTaxApply')?.checked!==false,x=calc((+$('ocPax').value||0)*(+$('ocCost').value||0),applyTax);
- return {clientId:c.id,client:c.name,customerName:passenger,tourId:t.id,tour:t.name,supplierId:$('ocSupplier').value,sellerId,seller:seller(sellerId),issueDate:$('ocIssue').value,serviceDate:service,time:timeTo24(),place:$('ocPlace').value,dropOff:$('ocDropOff').value,pax:+$('ocPax').value||0,unitCost:+$('ocCost').value||0,subtotal:x.subtotal,taxRate:applyTax?13:0,tax:x.tax,total:x.total,currency:$('ocCurrency').value,notes:$('ocNotes').value}
+
+  const sellerId=
+    $('ocSeller').value;
+
+  const passenger=
+    $('ocPassenger').value.trim();
+
+  const service=
+    $('ocService').value;
+
+  if(!sellerId){
+    alert(
+      'Debe seleccionar un vendedor.'
+    );
+    return;
+  }
+
+  if(!passenger||!service){
+    alert(
+      'Complete el nombre del cliente/pasajero y la fecha de servicio.'
+    );
+    return;
+  }
+
+  const c=
+    db.clients.find(
+      x=>x.id===$('ocClient').value
+    );
+
+  const supplierId=
+    $('ocSupplier').value;
+
+  const applyTax=
+    $('ocTaxApply')?.checked!==false;
+
+  // ========================================================
+  // EDICION HISTORICA
+  // ========================================================
+
+  if(window.tmLegacyOrderEdit===true){
+
+    const t=
+      db.tours.find(
+        x=>x.id===$('ocTour').value
+      );
+
+    const x=calc(
+      (+$('ocPax').value||0) *
+      (+$('ocCost').value||0),
+      applyTax
+    );
+
+    return {
+      clientId:c.id,
+      client:c.name,
+      customerName:passenger,
+      tourId:t.id,
+      tour:t.name,
+      supplierId,
+      sellerId,
+      seller:seller(sellerId),
+      issueDate:$('ocIssue').value,
+      serviceDate:service,
+      time:timeTo24(),
+      place:$('ocPlace').value,
+      dropOff:$('ocDropOff').value,
+      pax:+$('ocPax').value||0,
+      unitCost:+$('ocCost').value||0,
+      subtotal:x.subtotal,
+      taxRate:applyTax?13:0,
+      tax:x.tax,
+      total:x.total,
+      currency:$('ocCurrency').value,
+      notes:$('ocNotes').value
+    };
+  }
+
+  // ========================================================
+  // OC NUEVA MULTI-SERVICIO
+  // ========================================================
+
+  const rows=[
+    ...document.querySelectorAll(
+      '#ocItems [data-oc-item-row]'
+    )
+  ];
+
+  if(!rows.length){
+    alert(
+      'Debe agregar al menos un servicio.'
+    );
+    return;
+  }
+
+  const items=[];
+
+  for(const row of rows){
+
+    const tourId=
+      row.querySelector(
+        '.oc-item-tour'
+      )?.value||'';
+
+    const quantity=
+      Number(
+        row.querySelector(
+          '.oc-item-qty'
+        )?.value||0
+      );
+
+    const unitCost=
+      Number(
+        row.querySelector(
+          '.oc-item-cost'
+        )?.value||0
+      );
+
+    const t=
+      db.tours.find(
+        x=>x.id===tourId
+      );
+
+    if(!t){
+      alert(
+        'Seleccione un servicio válido.'
+      );
+      return;
+    }
+
+    if(
+      !Number.isFinite(quantity) ||
+      quantity<=0
+    ){
+      alert(
+        'La cantidad de cada servicio debe ser mayor que cero.'
+      );
+      return;
+    }
+
+    if(
+      !Number.isFinite(unitCost) ||
+      unitCost<0
+    ){
+      alert(
+        'El costo de cada servicio no es válido.'
+      );
+      return;
+    }
+
+    const itemId=
+      row.dataset.itemId||'';
+
+    items.push({
+      ...(itemId ? {id:itemId} : {}),
+      tourId:t.id,
+      description:t.name,
+      quantity,
+      unitCost
+    });
+  }
+
+  const subtotal=
+    items.reduce(
+      (sum,item)=>
+        sum +
+        item.quantity *
+        item.unitCost,
+      0
+    );
+
+  const x=calc(
+    subtotal,
+    applyTax
+  );
+
+  const firstTour=
+    db.tours.find(
+      t=>t.id===items[0].tourId
+    );
+
+  return {
+    clientId:c.id,
+    client:c.name,
+    customerName:passenger,
+
+    // Campos legacy para compatibilidad.
+    tourId:items[0].tourId,
+    tour:firstTour?.name||'',
+    pax:items.reduce(
+      (sum,item)=>
+        sum+item.quantity,
+      0
+    ),
+    unitCost:items[0].unitCost,
+
+    items,
+
+    supplierId,
+    sellerId,
+    seller:seller(sellerId),
+    issueDate:$('ocIssue').value,
+    serviceDate:service,
+    time:timeTo24(),
+    place:$('ocPlace').value,
+    dropOff:$('ocDropOff').value,
+    subtotal:x.subtotal,
+    taxRate:applyTax?13:0,
+    tax:x.tax,
+    total:x.total,
+    currency:$('ocCurrency').value,
+    notes:$('ocNotes').value
+  };
 }
+
+
 async function createOrder(){
  const d=orderData();
  if(!d)return;
@@ -3691,7 +4499,24 @@ async function createOrder(){
      saleId:x.sale_id,
      updatedAt:x.updated_at,
      seller:d.seller,
-     tour:d.tour
+     tour:d.tour,
+     items:(data.items||[]).map(item=>({
+       id:item.id,
+       tourId:item.tourId,
+       tour:
+         db.tours.find(
+           t=>t.id===item.tourId
+         )?.name||
+         item.description||
+         '',
+       description:item.description||'',
+       quantity:Number(item.quantity||0),
+       unitCost:Number(item.unitCost||0),
+       subtotal:Number(item.subtotal||0),
+       taxRate:Number(item.taxRate||0),
+       tax:Number(item.taxAmount||0),
+       total:Number(item.total||0)
+     }))
    };
 
    db.orders.push(o);
@@ -3771,6 +4596,26 @@ async function saveOrder(id){
      tour:d.tour
    });
 
+
+   if(Array.isArray(data.items)){
+     o.items=data.items.map(item=>({
+       id:item.id,
+       tourId:item.tourId,
+       tour:
+         db.tours.find(t=>t.id===item.tourId)?.name ||
+         item.description ||
+         '',
+       description:item.description||'',
+       quantity:Number(item.quantity||0),
+       unitCost:Number(item.unitCost||0),
+       subtotal:Number(item.subtotal||0),
+       taxRate:Number(item.taxRate||0),
+       tax:Number(item.taxAmount||0),
+       total:Number(item.total||0),
+       position:Number(item.position||0)
+     }));
+   }
+
    closeModal();
    alert('OC '+o.number+' actualizada.');
 
@@ -3786,12 +4631,254 @@ async function saveOrder(id){
 
 function company(title){return `<div class="center"><b>${COMPANY.commercial}</b><br>${COMPANY.legal}<br>${COMPANY.phone}<br>${COMPANY.email}<br>${COMPANY.address}<hr><b>${title}</b></div>`}
 function orderDoc(o,ticket=false){
+
  const base=company('ORDEN DE COMPRA');
+
  const notes=o.notes?.trim()||'';
+
+ const items=
+   Array.isArray(o.items)
+   ? o.items.filter(Boolean)
+   : [];
+
+ const hasItems=items.length>0;
+
+ const itemName=item=>
+   item.tour ||
+   item.description ||
+   db.tours.find(t=>t.id===item.tourId)?.name ||
+   'Servicio';
+
+ const ticketServices=
+   hasItems
+   ? `
+      <hr>
+      <b>Servicios:</b><br>
+      ${
+        items.map(item=>{
+          const qty=Number(item.quantity||0);
+          const cost=Number(item.unitCost||0);
+          const subtotal=
+            Number.isFinite(Number(item.subtotal))
+            ? Number(item.subtotal)
+            : qty*cost;
+
+          return `
+            <div style="margin:7px 0">
+              <b>${esc(itemName(item))}</b><br>
+              ${qty} × ${money(cost)}
+              = ${money(subtotal)}
+            </div>
+          `;
+        }).join('')
+      }
+     `
+   : `
+      <b>Tour:</b> ${esc(o.tour)}<br>
+      <b>Pax:</b> ${o.pax}
+     `;
+
+ const documentServices=
+   hasItems
+   ? `
+      <div style="margin-top:14px">
+        <b>Servicios</b>
+
+        <table style="
+          width:100%;
+          border-collapse:collapse;
+          margin-top:8px;
+          font-size:12px;
+        ">
+          <thead>
+            <tr>
+              <th style="
+                text-align:left;
+                padding:7px 6px;
+                border-bottom:1px solid #d9e2e1;
+              ">
+                Servicio
+              </th>
+
+              <th style="
+                text-align:center;
+                padding:7px 6px;
+                border-bottom:1px solid #d9e2e1;
+                width:70px;
+              ">
+                Cant.
+              </th>
+
+              <th style="
+                text-align:right;
+                padding:7px 6px;
+                border-bottom:1px solid #d9e2e1;
+                width:100px;
+              ">
+                Costo
+              </th>
+
+              <th style="
+                text-align:right;
+                padding:7px 6px;
+                border-bottom:1px solid #d9e2e1;
+                width:110px;
+              ">
+                Subtotal
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${
+              items.map(item=>{
+                const qty=Number(item.quantity||0);
+                const cost=Number(item.unitCost||0);
+                const subtotal=
+                  Number.isFinite(Number(item.subtotal))
+                  ? Number(item.subtotal)
+                  : qty*cost;
+
+                return `
+                  <tr>
+                    <td style="
+                      padding:8px 6px;
+                      border-bottom:1px solid #edf1f1;
+                    ">
+                      ${esc(itemName(item))}
+                    </td>
+
+                    <td style="
+                      padding:8px 6px;
+                      text-align:center;
+                      border-bottom:1px solid #edf1f1;
+                    ">
+                      ${qty}
+                    </td>
+
+                    <td style="
+                      padding:8px 6px;
+                      text-align:right;
+                      border-bottom:1px solid #edf1f1;
+                    ">
+                      ${money(cost)}
+                    </td>
+
+                    <td style="
+                      padding:8px 6px;
+                      text-align:right;
+                      border-bottom:1px solid #edf1f1;
+                    ">
+                      ${money(subtotal)}
+                    </td>
+                  </tr>
+                `;
+              }).join('')
+            }
+          </tbody>
+        </table>
+      </div>
+     `
+   : `
+      <div class="meta">
+        <b>Tour:</b> ${esc(o.tour)}<br>
+        <b>Pasajeros:</b> ${o.pax}
+      </div>
+     `;
+
  return ticket
- ? `<div class="ticket">${base}<b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Servicio:</b> ${displayServiceDate(o.serviceDate)} ${formatServiceTime(o.time)}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pax:</b> ${o.pax}<hr>Subtotal ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13% '+money(o.tax):'IVA: No aplica'}<br><b>TOTAL ${money(o.total)}</b>${notes?`<hr><b>Observaciones:</b><br>${esc(notes)}`:''}</div>`
- : `<div class="document">${base}<div class="meta"><b>OC:</b> ${o.number}<br><b>Operación:</b> ${o.op}<br><b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br><b>Nombre del Cliente:</b> ${esc(o.customerName)}<br><b>Vendedor:</b> ${esc(o.seller)}<br><b>Tour:</b> ${esc(o.tour)}<br><b>Fecha del servicio:</b> ${displayServiceDate(o.serviceDate)}<br><b>Hora:</b> ${formatServiceTime(o.time)}<br><b>Pickup:</b> ${esc(o.place||'-')}<br><b>Drop Off:</b> ${esc(o.dropOff||'-')}<br><b>Pasajeros:</b> ${o.pax}</div><hr>Subtotal: ${money(o.subtotal)}<br>${Number(o.taxRate||0)>0?'IVA 13%: '+money(o.tax):'IVA: No aplica'}<div class="total">TOTAL: ${money(o.total)}</div>${notes?`<p><b>Observaciones:</b><br>${esc(notes)}</p>`:''}</div>`
+
+ ? `
+   <div class="ticket">
+     ${base}
+
+     <b>OC:</b> ${o.number}<br>
+     <b>Operación:</b> ${o.op}<br>
+     <b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br>
+     <b>Cliente:</b> ${esc(o.customerName)}<br>
+     <b>Vendedor:</b> ${esc(o.seller)}<br>
+
+     <b>Servicio:</b>
+     ${displayServiceDate(o.serviceDate)}
+     ${formatServiceTime(o.time)}<br>
+
+     <b>Pickup:</b> ${esc(o.place||'-')}<br>
+     <b>Drop Off:</b> ${esc(o.dropOff||'-')}<br>
+
+     ${ticketServices}
+
+     <hr>
+
+     Subtotal ${money(o.subtotal)}<br>
+
+     ${
+       Number(o.taxRate||0)>0
+       ? 'IVA 13% '+money(o.tax)
+       : 'IVA: No aplica'
+     }<br>
+
+     <b>TOTAL ${money(o.total)}</b>
+
+     ${
+       notes
+       ? `
+          <hr>
+          <b>Observaciones:</b><br>
+          ${esc(notes)}
+         `
+       : ''
+     }
+   </div>
+ `
+
+ : `
+   <div class="document">
+     ${base}
+
+     <div class="meta">
+       <b>OC:</b> ${o.number}<br>
+       <b>Operación:</b> ${o.op}<br>
+       <b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br>
+       <b>Nombre del Cliente:</b> ${esc(o.customerName)}<br>
+       <b>Vendedor:</b> ${esc(o.seller)}<br>
+       <b>Fecha del servicio:</b>
+       ${displayServiceDate(o.serviceDate)}<br>
+       <b>Hora:</b> ${formatServiceTime(o.time)}<br>
+       <b>Pickup:</b> ${esc(o.place||'-')}<br>
+       <b>Drop Off:</b> ${esc(o.dropOff||'-')}<br>
+     </div>
+
+     ${documentServices}
+
+     <hr>
+
+     Subtotal: ${money(o.subtotal)}<br>
+
+     ${
+       Number(o.taxRate||0)>0
+       ? 'IVA 13%: '+money(o.tax)
+       : 'IVA: No aplica'
+     }
+
+     <div class="total">
+       TOTAL: ${money(o.total)}
+     </div>
+
+     ${
+       notes
+       ? `
+          <p>
+            <b>Observaciones:</b><br>
+            ${esc(notes)}
+          </p>
+         `
+       : ''
+     }
+   </div>
+ `;
+
 }
+
 
 function previewOrder(id){const o=db.orders.find(x=>x.id===id);if(o)preview('Vista previa — '+o.number,orderDoc(o),`printOrder('${id}')`)}
 function printOrder(id){const o=db.orders.find(x=>x.id===id);if(o)printRaw(orderDoc(o,true))}
@@ -3948,7 +5035,7 @@ function renderPayments(){
            o.number,
            o.op,
            o.customerName,
-           o.tour,
+           tmOrderServiceNames(o),
            supplier(o.supplierId)
          ]
          .join(' ')
@@ -4226,7 +5313,7 @@ function renderPayments(){
 
 
                <td>
-                 ${esc(o.tour)}
+                 ${esc(tmOrderServiceLabel(o))}
                </td>
 
 
@@ -4438,9 +5525,87 @@ function applyPayment(){
  pendingPaymentOrderIds=[];
  saveDB();closeModal();alert('Pago '+p.number+' aplicado correctamente.');
 }
-function paymentDoc(p){const os=(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)).filter(Boolean);return `<div class="document">${company('COMPROBANTE DE PAGO A PROVEEDOR')}<div class="meta"><b>Pago:</b> ${p.number}<br><b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br><b>Fecha:</b> ${p.date}<br><b>Comprobante:</b> ${esc(p.receipt)}</div><hr>${os.map(o=>`${o.number} · ${esc(o.customerName)} · ${esc(o.tour)} · ${money(o.total)}`).join('<br>')}<div class="total">TOTAL PAGADO: ${money(p.total)}</div></div>`}
+function paymentDoc(p){
+
+  const os=(p.orderIds||[])
+    .map(i=>db.orders.find(o=>o.id===i))
+    .filter(Boolean);
+
+  return `
+    <div class="document">
+
+      ${company('COMPROBANTE DE PAGO A PROVEEDOR')}
+
+      <div class="meta">
+        <b>Pago:</b> ${p.number}<br>
+        <b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br>
+        <b>Fecha:</b> ${p.date}<br>
+        <b>Comprobante:</b> ${esc(p.receipt)}
+      </div>
+
+      <hr>
+
+      ${os.map(o=>`
+        <div style="
+          padding:8px 0;
+          border-bottom:1px solid #edf1f1;
+        ">
+          <b>${esc(o.number||'OC')}</b>
+          · ${esc(o.customerName||'-')}
+          · ${esc(tmOrderServiceLabel(o))}
+          · ${money(o.total)}
+        </div>
+      `).join('')}
+
+      <div class="total">
+        TOTAL PAGADO: ${money(p.total)}
+      </div>
+
+    </div>
+  `;
+
+}
+
+
 function previewPayment(id){const p=db.payments.find(x=>x.id===id);if(p)preview('Vista previa — '+p.number,paymentDoc(p),`printPayment('${id}')`)}
-function printPayment(id){const p=db.payments.find(x=>x.id===id);if(!p)return;const os=(p.orderIds||[]).map(i=>db.orders.find(o=>o.id===i)).filter(Boolean);printRaw(`<div class="ticket">${company('COMPROBANTE DE PAGO')}<b>Pago:</b> ${p.number}<br><b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br><b>Fecha:</b> ${p.date}<br><b>Comprobante:</b> ${esc(p.receipt)}<hr>${os.map(o=>`${o.number} · ${esc(o.tour)} · ${money(o.total)}<br>`).join('')}<hr><b>TOTAL ${money(p.total)}</b></div>`)}
+function printPayment(id){
+
+  const p=db.payments.find(x=>x.id===id);
+
+  if(!p)return;
+
+  const os=(p.orderIds||[])
+    .map(i=>db.orders.find(o=>o.id===i))
+    .filter(Boolean);
+
+  printRaw(`
+    <div class="ticket">
+
+      ${company('COMPROBANTE DE PAGO')}
+
+      <b>Pago:</b> ${p.number}<br>
+      <b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br>
+      <b>Fecha:</b> ${p.date}<br>
+      <b>Comprobante:</b> ${esc(p.receipt)}
+
+      <hr>
+
+      ${os.map(o=>`
+        ${esc(o.number||'OC')}
+        · ${esc(tmOrderServiceLabel(o))}
+        · ${money(o.total)}
+        <br>
+      `).join('')}
+
+      <hr>
+
+      <b>TOTAL ${money(p.total)}</b>
+
+    </div>
+  `);
+
+}
+
 
 function sales(){
  const rows=db.sales.slice().sort((a,b)=>b.number.localeCompare(a.number));
@@ -4643,6 +5808,17 @@ function createSale(orderId){
  const o=db.orders.find(x=>x.id===orderId);
 
  if(!o)return;
+
+ // Protección temporal:
+ // la factura actual todavía trabaja con una sola línea.
+ // No permitir facturar una OC multi-servicio hasta que
+ // la facturación multi-servicio esté implementada.
+ if(Array.isArray(o.items) && o.items.length>1){
+   return alert(
+     'Esta OC contiene varios servicios. ' +
+     'La facturación multi-servicio se habilitará en el siguiente cambio.'
+   );
+ }
 
  if((o.status||'active')==='cancelled'){
    return alert(
@@ -5223,7 +6399,16 @@ function reportRows(){
       &&paymentMatch
       &&(!sellerId||o.sellerId===sellerId)
       &&(!supplierId||o.supplierId===supplierId)
-      &&(!tourId||o.tourId===tourId);
+      &&(
+        !tourId ||
+        (
+          tmOrderItems(o).length
+            ? tmOrderItems(o).some(
+                item=>item.tourId===tourId
+              )
+            : o.tourId===tourId
+        )
+      );
 
   }).sort((a,b)=>
     (dateOnly(a.serviceDate)+(a.time||'')).localeCompare(
@@ -5232,6 +6417,53 @@ function reportRows(){
   );
 
 }
+
+function reportServiceRows(){
+
+  const selectedTourId=
+    $('rFutureTour')?.value||'';
+
+  return reportRows().flatMap(o=>{
+
+    const items=tmOrderItems(o);
+
+    if(!items.length){
+      return [{
+        order:o,
+        item:null,
+        tourId:o.tourId||'',
+        tour:o.tour||'',
+        quantity:Number(o.pax||0),
+        unitCost:Number(o.unitCost||0),
+        subtotal:Number(o.subtotal||0),
+        tax:Number(o.tax||0),
+        total:Number(o.total||0)
+      }];
+    }
+
+    const visibleItems=
+      selectedTourId
+        ? items.filter(
+            item=>item.tourId===selectedTourId
+          )
+        : items;
+
+    return visibleItems.map(item=>({
+      order:o,
+      item,
+      tourId:item.tourId||'',
+      tour:tmOrderItemName(item)||'Servicio',
+      quantity:Number(item.quantity||0),
+      unitCost:Number(item.unitCost||0),
+      subtotal:Number(item.subtotal||0),
+      tax:Number(item.tax||0),
+      total:Number(item.total||0)
+    }));
+
+  });
+
+}
+
 
 function clearFutureFilters(){
 
@@ -5373,51 +6605,225 @@ function sellerReportRows(){
 
 }
 
+function analysisReportData(
+  from,
+  to,
+  group,
+  direction,
+  limit
+){
+
+  const orders=db.orders.filter(o=>{
+
+    const d=dateOnly(o.serviceDate);
+
+    return (o.status||'active')!=='cancelled'
+      &&(!from||d>=from)
+      &&(!to||d<=to);
+
+  });
+
+  const map={};
+
+
+  orders.forEach(o=>{
+
+    const items=tmOrderItems(o);
+
+    const serviceRows=
+      items.length
+        ? items.map(item=>({
+            tour:tmOrderItemName(item)||'Servicio',
+            pax:Number(item.quantity||0),
+            cost:Number(item.subtotal||0)
+          }))
+        : [{
+            tour:o.tour||'',
+            pax:Number(o.pax||0),
+            cost:Number(o.subtotal||0)
+          }];
+
+    const sale=reportSaleForOrder(o);
+
+    const saleAmount=
+      sale
+        ? Number(sale.subtotal||0)-
+          Number(sale.discountAmount||0)
+        : 0;
+
+
+    // --------------------------------------------------------
+    // AGRUPAR POR TOUR
+    //
+    // Cada línea real es un servicio independiente.
+    // Una venta solo puede atribuirse directamente al tour
+    // cuando la OC tiene un único servicio.
+    //
+    // Las OCs multi-servicio todavía no son facturables,
+    // por lo que no inventamos distribución de ventas.
+    // --------------------------------------------------------
+
+    if(group==='tour'){
+
+      serviceRows.forEach(row=>{
+
+        const key=row.tour||'Sin servicio';
+
+        if(!map[key]){
+          map[key]={
+            name:key,
+            services:0,
+            pax:0,
+            sales:0,
+            cost:0
+          };
+        }
+
+        map[key].services++;
+        map[key].pax+=row.pax;
+        map[key].cost+=row.cost;
+
+        if(serviceRows.length===1){
+          map[key].sales+=saleAmount;
+        }
+
+      });
+
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // PROVEEDOR / VENDEDOR / CLIENTE
+    //
+    // Servicios, pasajeros y costos se suman por líneas.
+    // La venta de la OC se suma UNA SOLA VEZ.
+    // --------------------------------------------------------
+
+    const key=
+      group==='supplier'
+        ? supplier(o.supplierId)
+        : group==='seller'
+          ? o.seller
+          : o.client;
+
+    const safeKey=key||'Sin información';
+
+    if(!map[safeKey]){
+      map[safeKey]={
+        name:safeKey,
+        services:0,
+        pax:0,
+        sales:0,
+        cost:0
+      };
+    }
+
+    map[safeKey].services+=serviceRows.length;
+
+    map[safeKey].pax+=serviceRows.reduce(
+      (sum,row)=>sum+row.pax,
+      0
+    );
+
+    map[safeKey].cost+=serviceRows.reduce(
+      (sum,row)=>sum+row.cost,
+      0
+    );
+
+    map[safeKey].sales+=saleAmount;
+
+  });
+
+
+  let rows=Object.values(map).sort(
+    (a,b)=>
+      direction==='desc'
+        ? b.services-a.services
+        : a.services-b.services
+  );
+
+
+  if(limit!=='all'){
+    rows=rows.slice(0,Number(limit)||5);
+  }
+
+
+  const totals=rows.reduce(
+    (a,row)=>({
+      services:a.services+row.services,
+      pax:a.pax+row.pax,
+      sales:a.sales+row.sales,
+      cost:a.cost+row.cost
+    }),
+    {
+      services:0,
+      pax:0,
+      sales:0,
+      cost:0
+    }
+  );
+
+
+  return {
+    rows,
+    totals
+  };
+
+}
+
+
 function renderReports(){
   if(!$('futureResult'))return;
 
-  const future=reportRows();
+    const future=reportServiceRows();
 
   const activeFuture=future.filter(
-    o=>(o.status||'active')!=='cancelled'
+    r=>(r.order.status||'active')!=='cancelled'
   );
 
   const paidCount=activeFuture.filter(
-    o=>!!reportSaleForOrder(o)
+    r=>!!reportSaleForOrder(r.order)
   ).length;
 
   const pendingCount=activeFuture.filter(
-    o=>!reportSaleForOrder(o)
+    r=>!reportSaleForOrder(r.order)
   ).length;
 
   const paxTotal=future.reduce(
-    (a,o)=>a+Number(o.pax||0),
+    (a,r)=>a+Number(r.quantity||0),
     0
   );
 
   $('futureSummary').innerHTML=`
     <div class="cards" style="grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 14px">
+
       <div class="card" style="background:#f8fafc">
         <small style="color:#64748b">Servicios</small>
         <div class="metric">${future.length}</div>
       </div>
+
       <div class="card" style="background:#f8fafc">
         <small style="color:#64748b">Pasajeros</small>
         <div class="metric">${paxTotal}</div>
       </div>
+
       <div class="card" style="background:#f0fdf4">
         <small style="color:#15803d">Cobrados</small>
         <div class="metric">${paidCount}</div>
       </div>
+
       <div class="card" style="background:#fff7ed">
         <small style="color:#c2410c">Pendientes</small>
         <div class="metric">${pendingCount}</div>
       </div>
+
     </div>`;
 
   $('futureResult').innerHTML=future.length?`
     <div style="overflow-x:auto">
       <table>
+
         <tr>
           <th>Fecha / Hora</th>
           <th>Servicio</th>
@@ -5427,7 +6833,9 @@ function renderReports(){
           <th>Documentos</th>
         </tr>
 
-        ${future.map(o=>{
+        ${future.map(r=>{
+
+          const o=r.order;
           const sale=reportSaleForOrder(o);
 
           const cancelled=
@@ -5437,27 +6845,38 @@ function renderReports(){
             !!sale && !cancelled;
 
           return `<tr>
+
             <td>
               <strong>${dateOnly(o.serviceDate).split('-').reverse().join('/')}</strong>
-              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(o.time||'Sin hora')}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">
+                ${esc(o.time||'Sin hora')}
+              </div>
             </td>
 
             <td>
-              <strong>${esc(o.tour||'-')}</strong>
-              <div style="font-size:12px;color:#64748b;margin-top:3px">${Number(o.pax||0)} pasajero${Number(o.pax||0)===1?'':'s'}</div>
+              <strong>${esc(r.tour||'-')}</strong>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">
+                ${Number(r.quantity||0)}
+                pasajero${Number(r.quantity||0)===1?'':'s'}
+              </div>
             </td>
 
             <td>
               <strong>${esc(o.customerName||'-')}</strong>
-              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(o.place||'Sin pickup')}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">
+                ${esc(o.place||'Sin pickup')}
+              </div>
             </td>
 
             <td>
               <div>${esc(o.seller||'-')}</div>
-              <div style="font-size:12px;color:#64748b;margin-top:3px">${esc(supplier(o.supplierId)||'-')}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:3px">
+                ${esc(supplier(o.supplierId)||'-')}
+              </div>
             </td>
 
             <td>
+
               ${cancelled
 
                 ?`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700">Cancelada</span>
@@ -5469,23 +6888,41 @@ function renderReports(){
                      <div style="font-size:12px;color:#64748b;margin-top:5px">${esc(sale.number||'Factura')} · ${esc(sale.paymentMethod||'No registrado')}</div>`
 
                   :`<span style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:12px;font-weight:700">Pendiente</span>`
-
               }
+
             </td>
 
             <td>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="secondary" onclick="previewOrder('${o.id}')">${esc(o.number||'OC')}</button>
-                ${sale?`<button class="secondary" onclick="previewSale('${sale.id}')">${esc(sale.number||'Factura')}</button>`:''}
+
+                <button
+                  class="secondary"
+                  onclick="previewOrder('${o.id}')">
+                  ${esc(o.number||'OC')}
+                </button>
+
+                ${sale
+                  ?`<button
+                      class="secondary"
+                      onclick="previewSale('${sale.id}')">
+                      ${esc(sale.number||'Factura')}
+                    </button>`
+                  :''
+                }
+
               </div>
             </td>
+
           </tr>`;
+
         }).join('')}
+
       </table>
     </div>`
+
     :'<div class="empty">No hay servicios para los filtros indicados.</div>';
 
-  const sellerRows=sellerReportRows();
+const sellerRows=sellerReportRows();
 
   const sellerTotals=sellerRows.reduce((a,r)=>({
     sale:a.sale+r.sale,
@@ -5568,55 +7005,67 @@ function renderReports(){
     :'<div class="empty">No hay ventas para el rango indicado.</div>';
 
   const af=$('rAFrom')?.value||'';
+
   const at=$('rATo')?.value||'';
+
   const g=$('rGroup')?.value||'tour';
+
   const ord=$('rOrder')?.value||'desc';
+
   const lim=$('rLimit')?.value||'5';
 
-  const base=db.orders.filter(o=>{
-    const d=dateOnly(o.serviceDate);
-    const active=
-      (o.status||'active')!=='cancelled';
 
-    return active
-      &&(!af||d>=af)
-      &&(!at||d<=at);
-  }),map={};
+  const analysis=
+    analysisReportData(
+      af,
+      at,
+      g,
+      ord,
+      lim
+    );
 
-  base.forEach(o=>{
-    const key=g==='tour'?o.tour:g==='supplier'?supplier(o.supplierId):g==='seller'?o.seller:o.client;
+  const ar=analysis.rows;
 
-    if(!map[key])map[key]={name:key,services:0,pax:0,sales:0,cost:0};
+  const analysisTotals=
+    analysis.totals;
 
-    map[key].services++;
-    map[key].pax+=Number(o.pax||0);
-    map[key].cost+=Number(o.subtotal||0);
-
-    const sale=reportSaleForOrder(o);
-    if(sale)map[key].sales+=Number(sale.subtotal||0)-Number(sale.discountAmount||0);
-  });
-
-  let ar=Object.values(map).sort((a,b)=>ord==='desc'?b.services-a.services:a.services-b.services);
-  if(lim!=='all')ar=ar.slice(0,+lim);
-
-  const analysisTotals=ar.reduce((a,x)=>({
-    services:a.services+x.services,
-    pax:a.pax+x.pax,
-    sales:a.sales+x.sales,
-    cost:a.cost+x.cost
-  }),{services:0,pax:0,sales:0,cost:0});
 
   $('analysisResult').innerHTML=ar.length?`
+
     <div class="cards" style="grid-template-columns:repeat(5,minmax(0,1fr));margin:18px 0 14px">
-      <div class="card"><small>Servicios</small><div class="metric">${analysisTotals.services}</div></div>
-      <div class="card"><small>Pasajeros</small><div class="metric">${analysisTotals.pax}</div></div>
-      <div class="card"><small>Ventas sin IVA</small><div class="metric">${money(analysisTotals.sales)}</div></div>
-      <div class="card"><small>Costos sin IVA</small><div class="metric">${money(analysisTotals.cost)}</div></div>
-      <div class="card"><small>Margen</small><div class="metric">${money(analysisTotals.sales-analysisTotals.cost)}</div></div>
+
+      <div class="card">
+        <small>Servicios</small>
+        <div class="metric">${analysisTotals.services}</div>
+      </div>
+
+      <div class="card">
+        <small>Pasajeros</small>
+        <div class="metric">${analysisTotals.pax}</div>
+      </div>
+
+      <div class="card">
+        <small>Ventas sin IVA</small>
+        <div class="metric">${money(analysisTotals.sales)}</div>
+      </div>
+
+      <div class="card">
+        <small>Costos sin IVA</small>
+        <div class="metric">${money(analysisTotals.cost)}</div>
+      </div>
+
+      <div class="card">
+        <small>Margen</small>
+        <div class="metric">${money(analysisTotals.sales-analysisTotals.cost)}</div>
+      </div>
+
     </div>
 
+
     <div style="overflow-x:auto">
+
       <table>
+
         <tr>
           <th>${g==='tour'?'Tour':g==='supplier'?'Proveedor':g==='seller'?'Vendedor':'Cliente'}</th>
           <th>Servicios</th>
@@ -5627,6 +7076,7 @@ function renderReports(){
         </tr>
 
         ${ar.map(x=>`
+
           <tr>
             <td>${esc(x.name||'-')}</td>
             <td>${x.services}</td>
@@ -5635,6 +7085,7 @@ function renderReports(){
             <td>${money(x.cost)}</td>
             <td>${money(x.sales-x.cost)}</td>
           </tr>
+
         `).join('')}
 
         <tr>
@@ -5645,32 +7096,44 @@ function renderReports(){
           <th>${money(analysisTotals.cost)}</th>
           <th>${money(analysisTotals.sales-analysisTotals.cost)}</th>
         </tr>
+
       </table>
+
     </div>`
+
     :'<div class="empty">No hay datos.</div>';
+
+
 }
 
 function toExcel(rows,file,totals=null){if(!rows.length)return alert('No hay datos para exportar.');if(typeof XLSX==='undefined')return alert('No se pudo cargar el generador de Excel. Recargue la página e inténtelo nuevamente.');const data=rows.map(r=>({...r}));if(totals)data.push(totals);const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Reporte');XLSX.writeFile(wb,file)}
 function exportFuture(){
 
-  const rows=reportRows().map(o=>{
+  const rows=reportServiceRows().map(r=>{
 
+    const o=r.order;
     const sale=reportSaleForOrder(o);
 
     const cancelled=
       (o.status||'active')==='cancelled';
 
     return {
-
       OC:o.number||'',
       FechaServicio:dateOnly(o.serviceDate),
       Hora:o.time||'',
-      Tour:o.tour||'',
+      Tour:r.tour||'',
       Cliente:o.customerName||'',
       Vendedor:o.seller||'',
       Proveedor:supplier(o.supplierId)||'',
       Pickup:o.place||'',
-      Pax:Number(o.pax||0),
+
+      Pax:Number(r.quantity||0),
+
+      CostoUnitario:
+        Number(r.unitCost||0),
+
+      CostoServicio:
+        Number(r.subtotal||0),
 
       EstadoOC:
         cancelled
@@ -5692,10 +7155,7 @@ function exportFuture(){
       MedioPago:
         sale
           ?(sale.paymentMethod||'No registrado')
-          :'',
-
-      TotalOC:Number(o.total||0)
-
+          :''
     };
 
   });
@@ -5705,8 +7165,8 @@ function exportFuture(){
     0
   );
 
-  const total=rows.reduce(
-    (a,r)=>a+Number(r.TotalOC||0),
+  const totalCost=rows.reduce(
+    (a,r)=>a+Number(r.CostoServicio||0),
     0
   );
 
@@ -5723,16 +7183,18 @@ function exportFuture(){
       Proveedor:'',
       Pickup:'',
       Pax:totalPax,
+      CostoUnitario:'',
+      CostoServicio:totalCost,
       EstadoOC:'',
       MotivoCancelacion:'',
       EstadoCobro:'',
       Factura:'',
-      MedioPago:'',
-      TotalOC:total
+      MedioPago:''
     }
   );
 
 }
+
 
 function exportSeller(){
   const sellerRows=sellerReportRows();
@@ -5781,94 +7243,72 @@ function exportSeller(){
 }
 
 function exportAnalysis(){
+
   const f=$('rAFrom')?.value||'';
+
   const t=$('rATo')?.value||'';
+
   const g=$('rGroup')?.value||'tour';
+
   const ord=$('rOrder')?.value||'desc';
+
   const lim=$('rLimit')?.value||'5';
 
-  const rows=db.orders.filter(o=>{
-    const d=dateOnly(o.serviceDate);
-    const active=
-      (o.status||'active')!=='cancelled';
 
-    return active
-      &&(!f||d>=f)
-      &&(!t||d<=t);
-  });
+  const analysis=
+    analysisReportData(
+      f,
+      t,
+      g,
+      ord,
+      lim
+    );
 
-  const map={};
 
-  rows.forEach(o=>{
-    const k=
-      g==='tour'
-        ?o.tour
-        :g==='supplier'
-          ?supplier(o.supplierId)
-          :g==='seller'
-            ?o.seller
-            :o.client;
+  const out=analysis.rows.map(x=>({
 
-    if(!map[k]){
-      map[k]={
-        Nombre:k,
-        Servicios:0,
-        Pasajeros:0,
-        VentasSinIVA:0,
-        CostosSinIVA:0
-      };
-    }
+    Nombre:x.name,
 
-    map[k].Servicios++;
-    map[k].Pasajeros+=Number(o.pax||0);
-    map[k].CostosSinIVA+=Number(o.subtotal||0);
+    Servicios:x.services,
 
-    const sale=reportSaleForOrder(o);
+    Pasajeros:x.pax,
 
-    if(sale){
-      map[k].VentasSinIVA+=
-        Number(sale.subtotal||0)-
-        Number(sale.discountAmount||0);
-    }
-  });
+    VentasSinIVA:x.sales,
 
-  let out=Object.values(map).map(x=>({
-    Nombre:x.Nombre,
-    Servicios:x.Servicios,
-    Pasajeros:x.Pasajeros,
-    VentasSinIVA:x.VentasSinIVA,
-    CostosSinIVA:x.CostosSinIVA,
-    Margen:x.VentasSinIVA-x.CostosSinIVA
+    CostosSinIVA:x.cost,
+
+    Margen:x.sales-x.cost
+
   }));
 
-  out.sort((a,b)=>
-    ord==='desc'
-      ?b.Servicios-a.Servicios
-      :a.Servicios-b.Servicios
+
+  const totals={
+
+    Nombre:'TOTAL',
+
+    Servicios:analysis.totals.services,
+
+    Pasajeros:analysis.totals.pax,
+
+    VentasSinIVA:analysis.totals.sales,
+
+    CostosSinIVA:analysis.totals.cost,
+
+    Margen:
+      analysis.totals.sales-
+      analysis.totals.cost
+
+  };
+
+
+  toExcel(
+    out,
+    'analisis_tours_proveedores.xlsx',
+    totals
   );
 
-  if(lim!=='all')out=out.slice(0,+lim);
-
-  const totals=out.reduce(
-    (a,r)=>({
-      Nombre:'TOTAL',
-      Servicios:a.Servicios+r.Servicios,
-      Pasajeros:a.Pasajeros+r.Pasajeros,
-      VentasSinIVA:a.VentasSinIVA+r.VentasSinIVA,
-      CostosSinIVA:a.CostosSinIVA+r.CostosSinIVA,
-      Margen:a.Margen+r.Margen
-    }),
-    {
-      Servicios:0,
-      Pasajeros:0,
-      VentasSinIVA:0,
-      CostosSinIVA:0,
-      Margen:0
-    }
-  );
-
-  toExcel(out,'analisis_tours_proveedores.xlsx',totals);
 }
+
 
 function clients(){return listView('Clientes','client',db.clients.map(c=>[c.name,c.type||'',c.phone||'',c.currency||'USD']),['Nombre','Tipo','Teléfono','Moneda'])}
 function suppliers(){return `<div class="toolbar"><h2>Proveedores</h2><button class="primary" onclick="simpleForm('supplier')">+ Nuevo proveedor</button></div><div class="card">${db.suppliers.length?`<table><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Acción</th></tr>${db.suppliers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.contact||'')}</td><td>${esc(s.phone||'')}</td><td>${esc(s.email||'')}</td><td><button class="secondary" onclick="simpleForm('supplier','${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay proveedores.</div>'}</div>`}

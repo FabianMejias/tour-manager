@@ -229,8 +229,25 @@ app.post('/api/purchase-orders', async (req, res) => {
 
   const d = req.body || {};
 
-  if (!d.clientId || !d.supplierId || !d.sellerId || !d.tourId ||
-      !d.customerName || !d.serviceDate) {
+  const incomingItems =
+    Array.isArray(d.items) && d.items.length
+      ? d.items
+      : [{
+          tourId: d.tourId,
+          description: '',
+          quantity: d.pax || 1,
+          unitCost: d.unitCost || 0
+        }];
+
+  if (
+    !d.clientId ||
+    !d.supplierId ||
+    !d.sellerId ||
+    !d.customerName ||
+    !d.serviceDate ||
+    !incomingItems.length ||
+    incomingItems.some(item => !item.tourId)
+  ) {
     return res.status(400).json({
       error: 'Faltan datos obligatorios de la orden de compra.'
     });
@@ -314,49 +331,130 @@ app.post('/api/purchase-orders', async (req, res) => {
     const id = d.id || require('crypto').randomUUID();
 
     // ============================================================
-    // TARIFA VIGENTE PARA OC NUEVA
+    // SERVICIOS Y TARIFAS VIGENTES PARA OC NUEVA
     // ============================================================
-    // Busca la tarifa utilizando:
-    //   TOUR + FECHA DEL SERVICIO
+    // Una OC puede contener uno o varios servicios.
     //
-    // Solo afecta OCs nuevas.
-    // Las OCs existentes conservan su costo.
+    // Cada línea consulta su propia tarifa utilizando:
+    // TOUR + FECHA DEL SERVICIO.
     //
-    // Si no existe una tarifa para esa fecha, se mantiene
-    // el costo ingresado manualmente por el vendedor.
+    // Si no existe tarifa vigente, se conserva el costo recibido.
+    // Todo se procesa dentro de la misma transacción.
     // ============================================================
 
-    let finalUnitCost = Number(d.unitCost || 0);
+    const processedItems = [];
 
-    const rateResult = await client.query(`
-      SELECT
-        id,
-        cost,
-        sale_price,
-        valid_from,
-        valid_to
-      FROM tour_rates
-      WHERE tour_id=$1
-        AND active=TRUE
-        AND valid_from <= $2::date
-        AND valid_to >= $2::date
-      ORDER BY valid_from DESC
-      LIMIT 1
-    `, [
-      d.tourId,
-      d.serviceDate
-    ]);
+    for (const rawItem of incomingItems) {
 
-    if (rateResult.rows.length) {
-      finalUnitCost = Number(rateResult.rows[0].cost || 0);
+      const quantity = Number(rawItem.quantity || 0);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        const err = new Error(
+          'La cantidad de cada servicio debe ser mayor que cero.'
+        );
+        err.code = 'INVALID_ITEM_QUANTITY';
+        throw err;
+      }
+
+      const tourResult = await client.query(`
+        SELECT id, name
+        FROM tours
+        WHERE id=$1
+        LIMIT 1
+      `, [rawItem.tourId]);
+
+      if (!tourResult.rows.length) {
+        const err = new Error(
+          'Uno de los servicios seleccionados no existe.'
+        );
+        err.code = 'TOUR_NOT_FOUND';
+        throw err;
+      }
+
+      const tour = tourResult.rows[0];
+
+      let unitCost = Number(rawItem.unitCost || 0);
+
+      const rateResult = await client.query(`
+        SELECT
+          id,
+          cost,
+          sale_price,
+          valid_from,
+          valid_to
+        FROM tour_rates
+        WHERE tour_id=$1
+          AND active=TRUE
+          AND valid_from <= $2::date
+          AND valid_to >= $2::date
+        ORDER BY valid_from DESC
+        LIMIT 1
+      `, [
+        rawItem.tourId,
+        d.serviceDate
+      ]);
+
+      if (rateResult.rows.length) {
+        unitCost = Number(rateResult.rows[0].cost || 0);
+      }
+
+      if (!Number.isFinite(unitCost) || unitCost < 0) {
+        const err = new Error(
+          'El costo de uno de los servicios no es válido.'
+        );
+        err.code = 'INVALID_ITEM_COST';
+        throw err;
+      }
+
+      const taxRate = Number(d.taxRate ?? 13);
+      const subtotal = unitCost * quantity;
+      const taxAmount = subtotal * (taxRate / 100);
+      const total = subtotal + taxAmount;
+
+      processedItems.push({
+        id: require('crypto').randomUUID(),
+        tourId: tour.id,
+        description:
+          String(rawItem.description || '').trim() ||
+          String(tour.name || '').trim(),
+        quantity,
+        unitCost,
+        subtotal,
+        taxRate,
+        taxAmount,
+        total
+      });
     }
 
-    // Recalcular los importes utilizando el costo de la tarifa.
-    const finalPassengers = Number(d.pax || 1);
-    const finalSubtotal = finalUnitCost * finalPassengers;
+    const firstItem = processedItems[0];
+
+    const finalPassengers = processedItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0
+    );
+
+    const finalSubtotal = processedItems.reduce(
+      (sum, item) => sum + item.subtotal,
+      0
+    );
+
+    const finalTaxAmount = processedItems.reduce(
+      (sum, item) => sum + item.taxAmount,
+      0
+    );
+
+    const finalTotal = processedItems.reduce(
+      (sum, item) => sum + item.total,
+      0
+    );
+
     const finalTaxRate = Number(d.taxRate ?? 13);
-    const finalTaxAmount = finalSubtotal * (finalTaxRate / 100);
-    const finalTotal = finalSubtotal + finalTaxAmount;
+
+    // Compatibilidad con la estructura histórica.
+    // La primera línea permanece como referencia en los campos legacy,
+    // mientras los totales representan la OC completa.
+    const headerTourId = firstItem.tourId;
+    const headerUnitCost = firstItem.unitCost;
 
 
     const r = await client.query(`
@@ -399,7 +497,7 @@ app.post('/api/purchase-orders', async (req, res) => {
       d.clientId,
       d.supplierId,
       d.sellerId,
-      d.tourId,
+      headerTourId,
       String(d.customerName).trim(),
       d.issueDate || new Date().toISOString().slice(0,10),
       d.serviceDate,
@@ -407,7 +505,7 @@ app.post('/api/purchase-orders', async (req, res) => {
       d.place || null,
       d.dropOff || null,
       finalPassengers,
-      finalUnitCost,
+      headerUnitCost,
       finalSubtotal,
       finalTaxRate,
       finalTaxAmount,
@@ -420,9 +518,46 @@ app.post('/api/purchase-orders', async (req, res) => {
       null
     ]);
 
+    for (const [itemIndex, item] of processedItems.entries()) {
+      await client.query(`
+        INSERT INTO purchase_order_items(
+          id,
+          purchase_order_id,
+          tour_id,
+          description,
+          quantity,
+          unit_cost,
+          subtotal,
+          tax_rate,
+          tax_amount,
+          total,
+          position,
+          active
+        )
+        VALUES(
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE
+        )
+      `, [
+        item.id,
+        id,
+        item.tourId,
+        item.description,
+        item.quantity,
+        item.unitCost,
+        item.subtotal,
+        item.taxRate,
+        item.taxAmount,
+        item.total,
+        itemIndex
+      ]);
+    }
+
     await client.query('COMMIT');
 
-    res.status(201).json({ order: r.rows[0] });
+    res.status(201).json({
+      order: r.rows[0],
+      items: processedItems
+    });
 
   } catch (e) {
     await client.query('ROLLBACK');
@@ -449,7 +584,9 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
     return res.status(401).json({ error: 'No autenticado.' });
 
   if (!(await tmHasPermission(req, 'purchase_orders.edit')))
-    return res.status(403).json({ error: 'No tiene permiso para editar órdenes de compra.' });
+    return res.status(403).json({
+      error: 'No tiene permiso para editar órdenes de compra.'
+    });
 
   const d = req.body || {};
 
@@ -464,9 +601,10 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Verificar la versión actual dentro de la misma transacción.
-    // Se compara como timestamp para evitar diferencias de representación
-    // entre PostgreSQL y JavaScript.
+    // ============================================================
+    // BLOQUEO Y CONTROL DE CONCURRENCIA
+    // ============================================================
+
     const current = await client.query(`
       SELECT *
       FROM purchase_orders
@@ -476,6 +614,7 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
     if (!current.rows.length) {
       await client.query('ROLLBACK');
+
       return res.status(404).json({
         error: 'Orden de compra no encontrada.'
       });
@@ -485,12 +624,17 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
     if ((currentOrder.status || 'active') === 'cancelled') {
       await client.query('ROLLBACK');
+
       return res.status(409).json({
         error: 'Esta OC está cancelada. Debe reactivarla antes de editarla.'
       });
     }
-    const currentUpdatedAt = new Date(currentOrder.updated_at).getTime();
-    const receivedUpdatedAt = new Date(d.updatedAt).getTime();
+
+    const currentUpdatedAt =
+      new Date(currentOrder.updated_at).getTime();
+
+    const receivedUpdatedAt =
+      new Date(d.updatedAt).getTime();
 
     if (
       !Number.isFinite(currentUpdatedAt) ||
@@ -505,6 +649,358 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
         order: currentOrder
       });
     }
+
+    // ============================================================
+    // NUEVO FLUJO: OC CON DETALLE DE SERVICIOS
+    // ============================================================
+    //
+    // Solo se activa cuando el frontend envía items[].
+    //
+    // Las OCs históricas que no envían items conservan el flujo
+    // legacy más abajo y NO son convertidas automáticamente.
+    // ============================================================
+
+    if (Array.isArray(d.items)) {
+
+      if (!d.items.length) {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+          error: 'La orden debe contener al menos un servicio.'
+        });
+      }
+
+      if (
+        !d.clientId ||
+        !d.supplierId ||
+        !d.sellerId ||
+        !String(d.customerName || '').trim() ||
+        !d.serviceDate
+      ) {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+          error: 'Cliente, proveedor, vendedor, nombre del cliente y fecha del servicio son obligatorios.'
+        });
+      }
+
+      // Bloquear las líneas actuales para una edición consistente.
+      const existingResult = await client.query(`
+        SELECT *
+        FROM purchase_order_items
+        WHERE purchase_order_id=$1
+        FOR UPDATE
+      `, [req.params.id]);
+
+      const existingById = new Map(
+        existingResult.rows.map(x => [x.id, x])
+      );
+
+      const processedItems = [];
+      const receivedExistingIds = new Set();
+
+      const taxRate = Number(d.taxRate ?? 13);
+
+      if (!Number.isFinite(taxRate) || taxRate < 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+          error: 'El porcentaje de IVA no es válido.'
+        });
+      }
+
+      for (let index = 0; index < d.items.length; index++) {
+
+        const rawItem = d.items[index] || {};
+
+        if (!rawItem.tourId) {
+          await client.query('ROLLBACK');
+
+          return res.status(400).json({
+            error: 'Cada línea debe tener un servicio o tour.'
+          });
+        }
+
+        const quantity = Number(rawItem.quantity || 0);
+
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          await client.query('ROLLBACK');
+
+          return res.status(400).json({
+            error: 'La cantidad de cada servicio debe ser mayor que cero.'
+          });
+        }
+
+        const tourResult = await client.query(`
+          SELECT id,name,cost
+          FROM tours
+          WHERE id=$1
+          LIMIT 1
+        `, [rawItem.tourId]);
+
+        if (!tourResult.rows.length) {
+          await client.query('ROLLBACK');
+
+          return res.status(400).json({
+            error: 'Uno de los servicios seleccionados ya no existe.'
+          });
+        }
+
+        const tour = tourResult.rows[0];
+
+        // Buscar tarifa vigente según TOUR + FECHA DEL SERVICIO.
+        const rateResult = await client.query(`
+          SELECT cost
+          FROM tour_rates
+          WHERE tour_id=$1
+            AND active=TRUE
+            AND $2::date BETWEEN valid_from AND valid_to
+          ORDER BY valid_from DESC
+          LIMIT 1
+        `, [
+          rawItem.tourId,
+          d.serviceDate
+        ]);
+
+        let unitCost;
+
+        if (rateResult.rows.length) {
+          unitCost = Number(rateResult.rows[0].cost || 0);
+        } else {
+          unitCost = Number(
+            rawItem.unitCost ??
+            tour.cost ??
+            0
+          );
+        }
+
+        if (!Number.isFinite(unitCost) || unitCost < 0) {
+          await client.query('ROLLBACK');
+
+          return res.status(400).json({
+            error: 'El costo de uno de los servicios no es válido.'
+          });
+        }
+
+        const subtotal = quantity * unitCost;
+        const taxAmount = subtotal * taxRate / 100;
+        const total = subtotal + taxAmount;
+
+        let itemId = null;
+
+        // Si llega un ID existente debe pertenecer a esta misma OC.
+        if (rawItem.id) {
+
+          if (!existingById.has(rawItem.id)) {
+            await client.query('ROLLBACK');
+
+            return res.status(400).json({
+              error: 'Una de las líneas no pertenece a esta orden de compra.'
+            });
+          }
+
+          itemId = rawItem.id;
+          receivedExistingIds.add(itemId);
+
+          await client.query(`
+            UPDATE purchase_order_items
+            SET
+              tour_id=$1,
+              description=$2,
+              quantity=$3,
+              unit_cost=$4,
+              subtotal=$5,
+              tax_rate=$6,
+              tax_amount=$7,
+              total=$8,
+              position=$9,
+              active=TRUE,
+              updated_at=NOW()
+            WHERE id=$10
+              AND purchase_order_id=$11
+          `, [
+            rawItem.tourId,
+            tour.name,
+            quantity,
+            unitCost,
+            subtotal,
+            taxRate,
+            taxAmount,
+            total,
+            index,
+            itemId,
+            req.params.id
+          ]);
+
+        } else {
+
+          itemId = require('crypto').randomUUID();
+
+          await client.query(`
+            INSERT INTO purchase_order_items(
+              id,
+              purchase_order_id,
+              tour_id,
+              description,
+              quantity,
+              unit_cost,
+              subtotal,
+              tax_rate,
+              tax_amount,
+              total,
+              position,
+              active
+            )
+            VALUES(
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE
+            )
+          `, [
+            itemId,
+            req.params.id,
+            rawItem.tourId,
+            tour.name,
+            quantity,
+            unitCost,
+            subtotal,
+            taxRate,
+            taxAmount,
+            total,
+            index
+          ]);
+        }
+
+        processedItems.push({
+          id: itemId,
+          tourId: rawItem.tourId,
+          description: tour.name,
+          quantity,
+          unitCost,
+          subtotal,
+          taxRate,
+          taxAmount,
+          total,
+          position: index
+        });
+      }
+
+      // ============================================================
+      // SOFT DELETE
+      // ============================================================
+      // Una línea existente que ya no viene en la edición se conserva
+      // físicamente, pero deja de formar parte de la OC activa.
+      // ============================================================
+
+      for (const existingItem of existingResult.rows) {
+
+        if (
+          existingItem.active !== false &&
+          !receivedExistingIds.has(existingItem.id)
+        ) {
+          await client.query(`
+            UPDATE purchase_order_items
+            SET
+              active=FALSE,
+              updated_at=NOW()
+            WHERE id=$1
+              AND purchase_order_id=$2
+          `, [
+            existingItem.id,
+            req.params.id
+          ]);
+        }
+      }
+
+      // ============================================================
+      // CAMPOS LEGACY DEL ENCABEZADO
+      // ============================================================
+      // Se mantienen para compatibilidad con reportes y funciones
+      // existentes mientras todo el sistema migra a detalle.
+      // ============================================================
+
+      const firstItem = processedItems[0];
+
+      const passengers = processedItems.reduce(
+        (sum, x) => sum + Number(x.quantity || 0),
+        0
+      );
+
+      const subtotal = processedItems.reduce(
+        (sum, x) => sum + Number(x.subtotal || 0),
+        0
+      );
+
+      const taxAmount = processedItems.reduce(
+        (sum, x) => sum + Number(x.taxAmount || 0),
+        0
+      );
+
+      const total = processedItems.reduce(
+        (sum, x) => sum + Number(x.total || 0),
+        0
+      );
+
+      const r = await client.query(`
+        UPDATE purchase_orders
+        SET
+          client_id=$1,
+          supplier_id=$2,
+          seller_id=$3,
+          tour_id=$4,
+          client_name=$5,
+          issue_date=$6,
+          service_date=$7,
+          service_time=$8,
+          pickup_place=$9,
+          drop_off=$10,
+          passengers=$11,
+          unit_cost=$12,
+          subtotal=$13,
+          tax_rate=$14,
+          tax_amount=$15,
+          total=$16,
+          currency=$17,
+          notes=$18,
+          updated_at=NOW(),
+          updated_by_user_id=$20
+        WHERE id=$19
+        RETURNING *
+      `, [
+        d.clientId,
+        d.supplierId,
+        d.sellerId,
+        firstItem.tourId,
+        String(d.customerName || '').trim(),
+        d.issueDate || null,
+        d.serviceDate || null,
+        d.time || null,
+        d.place || null,
+        d.dropOff || null,
+        passengers,
+        firstItem.unitCost,
+        subtotal,
+        taxRate,
+        taxAmount,
+        total,
+        d.currency || 'USD',
+        d.notes || null,
+        req.params.id,
+        req.session.user.id
+      ]);
+
+      await client.query('COMMIT');
+
+      return res.json({
+        order: r.rows[0],
+        items: processedItems
+      });
+    }
+
+    // ============================================================
+    // FLUJO LEGACY
+    // ============================================================
+    // Las OCs históricas siguen editándose exactamente como antes.
+    // No se crean purchase_order_items automáticamente.
+    // ============================================================
 
     const r = await client.query(`
       UPDATE purchase_orders
@@ -556,11 +1052,15 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
     await client.query('COMMIT');
 
-    res.json({ order: r.rows[0] });
+    res.json({
+      order: r.rows[0]
+    });
 
   } catch (e) {
 
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
 
     console.error('Error actualizando OC:', e);
 
@@ -571,11 +1071,8 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
   } finally {
 
     client.release();
-
   }
-
 });
-
 
 
 // ============================================================
@@ -902,6 +1399,70 @@ const q = (text, params=[]) => pool.query(text, params);
   }
 })();
 
+
+
+
+// ============================================================
+// DETALLE DE SERVICIOS DE ORDENES DE COMPRA
+// Migración aditiva.
+// No modifica ni convierte OCs históricas.
+// ============================================================
+
+const purchaseOrderItemsReady = (async () => {
+  try {
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchase_order_items (
+        id UUID PRIMARY KEY,
+        purchase_order_id UUID NOT NULL
+          REFERENCES purchase_orders(id) ON DELETE CASCADE,
+        tour_id UUID
+          REFERENCES tours(id),
+        description TEXT NOT NULL,
+        quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
+        unit_cost NUMERIC(14,2) NOT NULL DEFAULT 0,
+        subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+        tax_rate NUMERIC(7,4) NOT NULL DEFAULT 0,
+        tax_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+        total NUMERIC(14,2) NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_order_items
+      ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_order_items
+      ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_order_items_order
+      ON purchase_order_items(purchase_order_id)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_order_items_tour
+      ON purchase_order_items(tour_id)
+    `);
+
+    console.log('OK: detalle de servicios de OCs disponible.');
+
+  } catch (e) {
+    console.error(
+      'ERROR creando detalle de servicios de OCs:',
+      e.message
+    );
+
+    throw e;
+  }
+})();
 
 
 // ============================================================
@@ -1497,7 +2058,7 @@ app.get('/api/health', async (req,res) => {
 });
 
 async function getState(client) {
-  const [clients,suppliers,sellers,tours,orders,sales,payments,links,sequences,settings,users] = await Promise.all([
+  const [clients,suppliers,sellers,tours,orders,sales,payments,links,sequences,settings,users,orderItems] = await Promise.all([
     client.query(`SELECT id,name,type,phone,email,currency,notes,active FROM clients ORDER BY name`),
     client.query(`SELECT id,name,contact,phone,email,notes,active FROM suppliers ORDER BY name`),
     client.query(`SELECT id,name,email,phone,commission_rate,active FROM sellers ORDER BY name`),
@@ -1537,11 +2098,56 @@ async function getState(client) {
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
     client.query(`SELECT code,current_value FROM sequences`),
     client.query(`SELECT commercial_name,legal_name,legal_id,phone,whatsapp,email,address,default_tax_rate FROM company_settings WHERE id=1`),
-    client.query(`SELECT id,name,email,role,active FROM users ORDER BY name`)
+    client.query(`SELECT id,name,email,role,active FROM users ORDER BY name`),
+    client.query(`
+      SELECT
+        id,
+        purchase_order_id,
+        tour_id,
+        description,
+        quantity,
+        unit_cost,
+        subtotal,
+        tax_rate,
+        tax_amount,
+        total,
+        position,
+        active,
+        created_at,
+        updated_at
+      FROM purchase_order_items
+      WHERE active = TRUE
+      ORDER BY purchase_order_id, position, created_at, id
+    `)
   ]);
   const byId = (rows) => Object.fromEntries(rows.map(r=>[r.id,r]));
   const cs=byId(clients.rows), ss=byId(suppliers.rows), vs=byId(sellers.rows), ts=byId(tours.rows);
   const usersById=byId(users.rows);
+
+  const orderItemsByOrder = {};
+
+  for (const item of orderItems.rows) {
+    if (!orderItemsByOrder[item.purchase_order_id]) {
+      orderItemsByOrder[item.purchase_order_id] = [];
+    }
+
+    orderItemsByOrder[item.purchase_order_id].push({
+      id: item.id,
+      tourId: item.tour_id,
+      tour: ts[item.tour_id]?.name || item.description || '',
+      description: item.description || '',
+      quantity: Number(item.quantity || 0),
+      unitCost: Number(item.unit_cost || 0),
+      subtotal: Number(item.subtotal || 0),
+      taxRate: Number(item.tax_rate || 0),
+      tax: Number(item.tax_amount || 0),
+      total: Number(item.total || 0),
+      position: Number(item.position || 0),
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    });
+  }
+
   return {
     clients: clients.rows.map(x=>({id:x.id,name:x.name,type:x.type||'',phone:x.phone||'',email:x.email||'',currency:x.currency||'USD',notes:x.notes||''})),
     suppliers: suppliers.rows.map(x=>({id:x.id,name:x.name,contact:x.contact||'',phone:x.phone||'',email:x.email||'',notes:x.notes||''})),
@@ -1564,7 +2170,7 @@ async function getState(client) {
       currentRateTo:x.current_rate_to,
       currentRateActive:x.current_rate_active
     })),
-    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||''})),
+    orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||'',items:orderItemsByOrder[x.id]||[]})),
     sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||''})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
@@ -1714,6 +2320,47 @@ async function replaceState(client, db) {
 
           err.code = 'OC_CANCELLED';
           throw err;
+        }
+
+        // ====================================================
+        // PROTECCION TEMPORAL DE FACTURA MULTI-SERVICIO
+        // ====================================================
+        //
+        // 0 items = OC histórica: continúa funcionando.
+        // 1 item  = OC moderna de un servicio: puede facturar.
+        // 2+      = esperar factura multi-servicio.
+        //
+        // Solo se valida para ventas NUEVAS, por lo que ninguna
+        // factura histórica existente resulta afectada.
+        // ====================================================
+
+        if (orderCheck.rows.length) {
+          const itemCountResult = await client.query(
+            `
+              SELECT COUNT(*)::int AS item_count
+              FROM purchase_order_items
+              WHERE purchase_order_id=$1
+                AND active=TRUE
+            `,
+            [linkedOrder.id]
+          );
+
+          const itemCount =
+            Number(
+              itemCountResult.rows[0]?.item_count || 0
+            );
+
+          if (itemCount > 1) {
+            const err = new Error(
+              'La OC ' +
+              orderCheck.rows[0].number +
+              ' contiene varios servicios. ' +
+              'La facturación multi-servicio todavía no está habilitada.'
+            );
+
+            err.code = 'OC_MULTI_SERVICE_INVOICE_PENDING';
+            throw err;
+          }
         }
 
       }
@@ -1896,4 +2543,22 @@ app.put('/api/state', async (req,res)=>{
 });
 
 app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
-app.listen(port,()=>console.log(`Tour Manager escuchando en ${port}`));
+async function startServer() {
+  try {
+    await purchaseOrderItemsReady;
+
+    app.listen(port, () => {
+      console.log(`Tour Manager escuchando en ${port}`);
+    });
+
+  } catch (e) {
+    console.error(
+      'ERROR CRITICO: no se pudo preparar la base de datos para iniciar:',
+      e.message
+    );
+
+    process.exit(1);
+  }
+}
+
+startServer();
