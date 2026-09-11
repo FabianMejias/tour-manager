@@ -3208,6 +3208,34 @@ function orderForm(id=null){
       }
 
 
+
+
+      /* ===== OC AJUSTE FINAL CAMPOS NUMERICOS ===== */
+
+      .tm-oc-item .oc-item-qty{
+        text-align:center !important;
+        padding-left:8px !important;
+        padding-right:8px !important;
+      }
+
+      .tm-oc-item .oc-item-qty::-webkit-inner-spin-button,
+      .tm-oc-item .oc-item-qty::-webkit-outer-spin-button,
+      .tm-oc-cost-wrap .oc-item-cost::-webkit-inner-spin-button,
+      .tm-oc-cost-wrap .oc-item-cost::-webkit-outer-spin-button{
+        -webkit-appearance:none;
+        margin:0;
+      }
+
+      .tm-oc-item .oc-item-qty,
+      .tm-oc-cost-wrap .oc-item-cost{
+        appearance:textfield;
+        -moz-appearance:textfield;
+      }
+
+      .tm-oc-cost-wrap .oc-item-cost{
+        padding-right:10px !important;
+      }
+
       /* ===== OC LAYOUT DEFINITIVO 2026 ===== */
 
       .tm-oc-time{
@@ -5783,359 +5811,1098 @@ function printPayment(id){
 }
 
 
-function sales(){
- const rows=db.sales.slice().sort((a,b)=>b.number.localeCompare(a.number));
- return `<div class="toolbar"><h2>Ventas / facturas internas</h2><small>La venta se genera opcionalmente desde la OC.</small></div>
- <div class="card">${rows.length?`<table><tr><th>Venta</th><th>Operación</th><th>Cliente</th><th>Vendedor</th><th>Tour</th><th>Servicio</th><th>Total</th><th>Acción</th></tr>${rows.map(s=>`<tr><td>${s.number}</td><td>${s.op}</td><td>${esc(s.customerName)}</td><td>${esc(s.seller)}</td><td>${esc(s.tour)}</td><td>${s.serviceDate}</td><td>${money(s.total)}</td><td><button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button> <button class="secondary" onclick="editSaleForm('${s.id}')">Editar</button></td></tr>`).join('')}</table>`:'<div class="empty">No hay ventas. Genere la factura desde una OC.</div>'}</div>`
+function tmSaleServiceLabel(s){
+
+  if(
+    Array.isArray(s?.items) &&
+    s.items.length
+  ){
+
+    const names=s.items
+      .map(
+        item=>
+          item.description ||
+          item.tour ||
+          ''
+      )
+      .filter(Boolean);
+
+    if(s.items.length===1){
+      return names[0] || '1 servicio';
+    }
+
+    return (
+      s.items.length+
+      ' servicios · '+
+      names.join(', ')
+    );
+  }
+
+  return s?.tour || '';
 }
+
+
+function tmSalePassengerLabel(s){
+
+  if(
+    Array.isArray(s?.items) &&
+    s.items.length
+  ){
+    return s.items.reduce(
+      (sum,item)=>
+        sum+
+        Number(item.quantity||0),
+      0
+    );
+  }
+
+  return Number(s?.pax||0);
+}
+
+
+function sales(){
+
+  const rows=db.sales
+    .slice()
+    .sort(
+      (a,b)=>
+        b.number.localeCompare(a.number)
+    );
+
+  return `
+    <div class="toolbar">
+
+      <div>
+        <h2>
+          Ventas / facturas internas
+        </h2>
+
+        <small>
+          La venta se genera opcionalmente desde la OC.
+        </small>
+      </div>
+
+    </div>
+
+    <div class="card">
+
+      ${
+        rows.length
+        ?`
+          <table>
+
+            <tr>
+              <th>Venta</th>
+              <th>Operación</th>
+              <th>Cliente</th>
+              <th>Vendedor</th>
+              <th>Servicios</th>
+              <th>Pasajeros</th>
+              <th>Fecha servicio</th>
+              <th>Total</th>
+              <th>Acción</th>
+            </tr>
+
+            ${
+              rows.map(s=>`
+
+                <tr>
+
+                  <td>
+                    ${esc(s.number)}
+                  </td>
+
+                  <td>
+                    ${esc(s.op)}
+                  </td>
+
+                  <td>
+                    ${esc(s.customerName)}
+                  </td>
+
+                  <td>
+                    ${esc(s.seller)}
+                  </td>
+
+                  <td style="
+                    max-width:310px;
+                    white-space:normal;
+                    line-height:1.35
+                  ">
+                    ${esc(tmSaleServiceLabel(s))}
+                  </td>
+
+                  <td style="text-align:center">
+                    ${tmSalePassengerLabel(s)}
+                  </td>
+
+                  <td>
+                    ${
+                      dateOnly(s.serviceDate)
+                        .split('-')
+                        .reverse()
+                        .join('/')
+                    }
+                  </td>
+
+                  <td>
+                    <strong>
+                      ${money(s.total)}
+                    </strong>
+                  </td>
+
+                  <td style="white-space:nowrap">
+
+                    <button
+                      class="secondary"
+                      onclick="previewSale('${s.id}')"
+                    >
+                      Vista previa
+                    </button>
+
+                    <button
+                      class="secondary"
+                      onclick="editSaleForm('${s.id}')"
+                    >
+                      Editar
+                    </button>
+
+                  </td>
+
+                </tr>
+
+              `).join('')
+            }
+
+          </table>
+        `
+        :`
+          <div class="empty">
+            No hay ventas. Genere la factura desde una OC.
+          </div>
+        `
+      }
+
+    </div>
+  `;
+}
+
+
+function tmSaleSourceItems(order){
+
+  if(
+    Array.isArray(order?.items) &&
+    order.items.length
+  ){
+    return order.items.map((item,index)=>{
+
+      const tour=db.tours.find(
+        x=>x.id===item.tourId
+      );
+
+      return {
+        sourceItemId:item.id||null,
+        tourId:item.tourId||null,
+        description:
+          item.description ||
+          item.tour ||
+          tour?.name ||
+          'Servicio',
+        quantity:Number(item.quantity||1),
+        unitPrice:Number(tour?.hotel||0),
+        position:index
+      };
+    });
+  }
+
+  const tour=db.tours.find(
+    x=>x.id===order?.tourId
+  );
+
+  return [{
+    sourceItemId:null,
+    tourId:order?.tourId||null,
+    description:
+      order?.tour ||
+      tour?.name ||
+      'Servicio',
+    quantity:Number(order?.pax||1),
+    unitPrice:Number(tour?.hotel||0),
+    position:0
+  }];
+}
+
+
+function tmSaleReadItems(){
+
+  return Array.from(
+    document.querySelectorAll('.tm-sale-item-row')
+  ).map((row,index)=>({
+
+    id:
+      row.dataset.saleItemId ||
+      null,
+
+    tourId:
+      row.dataset.tourId ||
+      null,
+
+    description:
+      row.dataset.description ||
+      '',
+
+    quantity:
+      Number(row.dataset.quantity||0),
+
+    unitPrice:
+      Number(
+        row.querySelector('.tm-sale-item-price')?.value ||
+        0
+      ),
+
+    position:index
+  }));
+}
+
+
 function saleForm(orderId){
 
- window.__currentSaleOrderId=orderId;
+  window.__currentSaleOrderId=orderId;
 
- const o=db.orders.find(x=>x.id===orderId);
- if(!o)return;
- if(o.saleId)return alert('Esta OC ya tiene factura.');
+  const o=db.orders.find(
+    x=>x.id===orderId
+  );
 
- const t=db.tours.find(x=>x.id===o.tourId);
+  if(!o)return;
 
- modal('Generar factura desde '+o.number,`
+  if(o.saleId){
+    return alert(
+      'Esta OC ya tiene factura.'
+    );
+  }
 
- <div style="margin-bottom:18px">
-   <div style="font-size:13px;color:#64748b;margin-bottom:4px">
-     Complete los datos de cobro de esta operación
-   </div>
- </div>
+  if((o.status||'active')==='cancelled'){
+    return alert(
+      'Esta OC está cancelada. Debe reactivarla antes de generar una factura.'
+    );
+  }
 
- <div class="grid" style="gap:14px">
+  const items=tmSaleSourceItems(o);
 
-   <div class="field">
-     <label>Cliente</label>
-     <input disabled value="${esc(o.customerName)}"
-       style="background:#f8fafc">
-   </div>
+  const itemRows=items.map((item,index)=>`
 
-   <div class="field">
-     <label>Tour</label>
-     <input disabled value="${esc(o.tour)}"
-       style="background:#f8fafc">
-   </div>
+    <div
+      class="tm-sale-item-row"
+      data-index="${index}"
+      data-tour-id="${esc(item.tourId||'')}"
+      data-description="${esc(item.description||'')}"
+      data-quantity="${Number(item.quantity||0)}"
+      style="
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
+        gap:10px;
+        align-items:center;
+        padding:10px 0;
+        border-bottom:1px solid #edf1f4
+      "
+    >
 
-   <div class="field">
-     <label>Precio de venta unitario *</label>
-     <input id="salePrice"
-            type="number"
-            step=".01"
-            min="0"
-            value="${t?.hotel||0}"
-            oninput="saleCalc()">
-   </div>
+      <div style="
+        min-width:0;
+        font-weight:700;
+        color:#1f2937
+      ">
+        ${esc(item.description||'Servicio')}
+      </div>
 
-   <div class="field">
-     <label>Descuento %</label>
-     <input id="saleDiscount"
-            type="number"
-            step=".01"
-            min="0"
-            value="0"
-            oninput="saleCalc()">
-   </div>
+      <div style="
+        text-align:center;
+        font-weight:700;
+        color:#475569;
+        font-variant-numeric:tabular-nums
+      ">
+        ${Number(item.quantity||0)}
+      </div>
 
-   <div class="field">
-     <label>Medio de pago *</label>
-     <select id="salePaymentMethod">
-       <option value="">Seleccione...</option>
-       <option value="Cash">Cash</option>
-       <option value="Compra Click">Compra Click</option>
-       <option value="Tarjeta">Tarjeta</option>
-     </select>
-   </div>
+      <div style="position:relative">
 
-   <div class="field">
-     <label>Impuestos</label>
+        <span style="
+          position:absolute;
+          left:11px;
+          top:0;
+          height:40px;
+          display:flex;
+          align-items:center;
+          color:#64748b;
+          font-size:12px;
+          font-weight:800;
+          pointer-events:none;
+          z-index:2
+        ">
+          $
+        </span>
 
-     <label style="
-       min-height:46px;
-       display:flex;
-       align-items:center;
-       gap:10px;
-       padding:0 14px;
-       border:1px solid #dce3ea;
-       border-radius:10px;
-       background:#f8fafc;
-       cursor:pointer;
-       margin:0;
-       box-sizing:border-box
-     ">
-       <input id="saleTaxApply"
-              type="checkbox"
-              checked
-              onchange="saleCalc()"
-              style="
-                width:17px;
-                height:17px;
-                margin:0;
-                flex:0 0 auto
-              ">
-       <span style="font-weight:600;color:#334155">
-         Aplicar IVA 13%
-       </span>
-     </label>
-   </div>
+        <input
+          class="tm-sale-item-price"
+          type="number"
+          step=".01"
+          min="0"
+          value="${Number(item.unitPrice||0).toFixed(2)}"
+          oninput="saleCalc()"
+          style="
+            width:100%;
+            box-sizing:border-box;
+            padding-left:25px;
+            padding-right:10px;
+            text-align:right;
+            font-variant-numeric:tabular-nums
+          "
+        >
 
- </div>
+      </div>
 
- <div class="card" style="
-   margin-top:18px;
-   padding:18px 20px;
-   background:#f8fafc;
-   border:1px solid #e5eaf0;
-   border-radius:14px
- ">
-   <div style="
-     display:grid;
-     grid-template-columns:repeat(4,minmax(0,1fr));
-     gap:18px
-   ">
+      <div
+        class="tm-sale-item-total"
+        style="
+          text-align:right;
+          font-weight:800;
+          color:#0f766e;
+          font-variant-numeric:tabular-nums
+        "
+      >
+        ${money(
+          Number(item.quantity||0) *
+          Number(item.unitPrice||0)
+        )}
+      </div>
 
-     <div>
-       <small style="color:#64748b">Subtotal</small>
-       <div id="saleSub"
-            style="font-size:19px;font-weight:700;margin-top:4px">
-         $0.00
-       </div>
-     </div>
+    </div>
 
-     <div>
-       <small style="color:#64748b">Descuento</small>
-       <div id="saleDiscountAmount"
-            style="font-size:19px;font-weight:700;margin-top:4px">
-         $0.00
-       </div>
-     </div>
+  `).join('');
 
-     <div>
-       <small style="color:#64748b">IVA 13%</small>
-       <div id="saleTax"
-            style="font-size:19px;font-weight:700;margin-top:4px">
-         $0.00
-       </div>
-     </div>
+  modal(
+    'Generar factura desde '+o.number,
+    `
 
-     <div style="
-       padding-left:18px;
-       border-left:1px solid #dce3ea
-     ">
-       <small style="color:#64748b;font-weight:700">TOTAL</small>
-       <div id="saleTotal"
-            style="font-size:26px;font-weight:800;margin-top:2px">
-         $0.00
-       </div>
-     </div>
+    <style>
+      .tm-sale-item-price{
+        appearance:textfield;
+        -moz-appearance:textfield;
+      }
 
-   </div>
- </div>
+      .tm-sale-item-price::-webkit-inner-spin-button,
+      .tm-sale-item-price::-webkit-outer-spin-button{
+        -webkit-appearance:none;
+        margin:0;
+      }
 
- <div class="actions" style="margin-top:18px">
-   <button class="secondary" onclick="closeModal()">Cancelar</button>
-   <button class="primary" onclick="createSale('${orderId}')">
-     Generar factura
-   </button>
- </div>
- `);
+      @media(max-width:760px){
+        .tm-sale-item-row{
+          grid-template-columns:1fr 65px 115px 95px !important;
+        }
+      }
+    </style>
 
- saleCalc();
+    <div style="margin-bottom:18px">
+
+      <div style="
+        font-size:13px;
+        color:#64748b;
+        margin-bottom:4px
+      ">
+        Complete los precios de venta de esta operación
+      </div>
+
+    </div>
+
+
+    <div class="grid" style="gap:14px">
+
+      <div class="field">
+
+        <label>Cliente</label>
+
+        <input
+          disabled
+          value="${esc(o.customerName)}"
+          style="background:#f8fafc"
+        >
+
+      </div>
+
+
+      <div class="field">
+
+        <label>Fecha de servicio</label>
+
+        <input
+          disabled
+          value="${
+            dateOnly(o.serviceDate)
+              .split('-')
+              .reverse()
+              .join('/')
+          }"
+          style="background:#f8fafc"
+        >
+
+      </div>
+
+    </div>
+
+
+    <div class="card" style="
+      margin-top:18px;
+      padding:16px 18px;
+      border:1px solid #e5eaf0;
+      border-radius:14px
+    ">
+
+      <div style="
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
+        gap:10px;
+        padding:0 0 8px;
+        border-bottom:1px solid #dce3ea;
+        color:#64748b;
+        font-size:11px;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.04em
+      ">
+
+        <div>Servicio / Tour</div>
+
+        <div style="text-align:center">
+          Cantidad
+        </div>
+
+        <div style="text-align:right">
+          Precio venta
+        </div>
+
+        <div style="text-align:right">
+          Total
+        </div>
+
+      </div>
+
+      ${itemRows}
+
+    </div>
+
+
+    <div class="grid" style="
+      gap:14px;
+      margin-top:18px
+    ">
+
+      <div class="field">
+
+        <label>Descuento %</label>
+
+        <input
+          id="saleDiscount"
+          type="number"
+          step=".01"
+          min="0"
+          value="0"
+          oninput="saleCalc()"
+        >
+
+      </div>
+
+
+      <div class="field">
+
+        <label>Medio de pago *</label>
+
+        <select id="salePaymentMethod">
+
+          <option value="">
+            Seleccione...
+          </option>
+
+          <option value="Cash">
+            Cash
+          </option>
+
+          <option value="Compra Click">
+            Compra Click
+          </option>
+
+          <option value="Tarjeta">
+            Tarjeta
+          </option>
+
+        </select>
+
+      </div>
+
+
+      <div class="field">
+
+        <label>Impuestos</label>
+
+        <label style="
+          min-height:46px;
+          display:flex;
+          align-items:center;
+          gap:10px;
+          padding:0 14px;
+          border:1px solid #dce3ea;
+          border-radius:10px;
+          background:#f8fafc;
+          cursor:pointer;
+          margin:0;
+          box-sizing:border-box
+        ">
+
+          <input
+            id="saleTaxApply"
+            type="checkbox"
+            checked
+            onchange="saleCalc()"
+            style="
+              width:17px;
+              height:17px;
+              margin:0;
+              flex:0 0 auto
+            "
+          >
+
+          <span style="
+            font-weight:600;
+            color:#334155
+          ">
+            Aplicar IVA 13%
+          </span>
+
+        </label>
+
+      </div>
+
+    </div>
+
+
+    <div class="card" style="
+      margin-top:18px;
+      padding:18px 20px;
+      background:#f8fafc;
+      border:1px solid #e5eaf0;
+      border-radius:14px
+    ">
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:18px
+      ">
+
+        <div>
+
+          <small style="color:#64748b">
+            Subtotal
+          </small>
+
+          <div
+            id="saleSub"
+            style="
+              font-size:19px;
+              font-weight:700;
+              margin-top:4px
+            "
+          >
+            $0.00
+          </div>
+
+        </div>
+
+
+        <div>
+
+          <small style="color:#64748b">
+            Descuento
+          </small>
+
+          <div
+            id="saleDiscountAmount"
+            style="
+              font-size:19px;
+              font-weight:700;
+              margin-top:4px
+            "
+          >
+            $0.00
+          </div>
+
+        </div>
+
+
+        <div>
+
+          <small style="color:#64748b">
+            IVA 13%
+          </small>
+
+          <div
+            id="saleTax"
+            style="
+              font-size:19px;
+              font-weight:700;
+              margin-top:4px
+            "
+          >
+            $0.00
+          </div>
+
+        </div>
+
+
+        <div style="
+          padding-left:18px;
+          border-left:1px solid #dce3ea
+        ">
+
+          <small style="
+            color:#64748b;
+            font-weight:700
+          ">
+            TOTAL
+          </small>
+
+          <div
+            id="saleTotal"
+            style="
+              font-size:26px;
+              font-weight:800;
+              margin-top:2px
+            "
+          >
+            $0.00
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="actions" style="margin-top:18px">
+
+      <button
+        class="secondary"
+        onclick="closeModal()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        class="primary"
+        onclick="createSale('${orderId}')"
+      >
+        Generar factura
+      </button>
+
+    </div>
+
+    `
+  );
+
+  saleCalc();
 }
 
 
 function saleCalc(){
 
- const price=+$('salePrice')?.value||0;
- const dp=+$('saleDiscount')?.value||0;
+  const items=tmSaleReadItems();
 
- const order=db.orders.find(
-   x=>x.id===window.__currentSaleOrderId
- );
+  let subtotal=0;
 
- const pax=order?.pax||1;
- const subtotal=pax*price;
- const discount=subtotal*dp/100;
- const applyTax=$('saleTaxApply')?.checked!==false;
+  document
+    .querySelectorAll('.tm-sale-item-row')
+    .forEach((row,index)=>{
 
- const x=calc(subtotal-discount,applyTax);
+      const item=items[index];
 
- if($('saleSub'))
-   $('saleSub').textContent=money(subtotal);
+      const lineTotal=
+        Number(item?.quantity||0) *
+        Number(item?.unitPrice||0);
 
- if($('saleDiscountAmount'))
-   $('saleDiscountAmount').textContent='-'+money(discount);
+      subtotal+=lineTotal;
 
- if($('saleTax'))
-   $('saleTax').textContent=applyTax
-     ?money(x.tax)
-     :'No aplica';
+      const target=
+        row.querySelector(
+          '.tm-sale-item-total'
+        );
 
- if($('saleTotal'))
-   $('saleTotal').textContent=money(x.total);
+      if(target){
+        target.textContent=
+          money(lineTotal);
+      }
+    });
+
+  const dp=
+    Number(
+      $('saleDiscount')?.value ||
+      0
+    );
+
+  const discount=
+    subtotal *
+    dp /
+    100;
+
+  const applyTax=
+    $('saleTaxApply')?.checked!==false;
+
+  const x=
+    calc(
+      subtotal-discount,
+      applyTax
+    );
+
+  if($('saleSub')){
+    $('saleSub').textContent=
+      money(subtotal);
+  }
+
+  if($('saleDiscountAmount')){
+    $('saleDiscountAmount').textContent=
+      '-'+money(discount);
+  }
+
+  if($('saleTax')){
+    $('saleTax').textContent=
+      applyTax
+        ?money(x.tax)
+        :'No aplica';
+  }
+
+  if($('saleTotal')){
+    $('saleTotal').textContent=
+      money(x.total);
+  }
 }
 
 
-function createSale(orderId){
+async function createSale(orderId){
 
- const o=db.orders.find(x=>x.id===orderId);
+  const o=db.orders.find(
+    x=>x.id===orderId
+  );
 
- if(!o)return;
+  if(!o)return;
 
- // Protección temporal:
- // la factura actual todavía trabaja con una sola línea.
- // No permitir facturar una OC multi-servicio hasta que
- // la facturación multi-servicio esté implementada.
- if(Array.isArray(o.items) && o.items.length>1){
-   return alert(
-     'Esta OC contiene varios servicios. ' +
-     'La facturación multi-servicio se habilitará en el siguiente cambio.'
-   );
- }
+  if((o.status||'active')==='cancelled'){
+    return alert(
+      'Esta OC está cancelada. Debe reactivarla antes de generar una factura.'
+    );
+  }
 
- if((o.status||'active')==='cancelled'){
-   return alert(
-     'Esta OC está cancelada. Debe reactivarla antes de generar una factura.'
-   );
- }
+  if(o.saleId){
+    return alert(
+      'Esta OC ya tiene factura.'
+    );
+  }
 
- const price=+$('salePrice').value||0;
- const dp=+$('saleDiscount').value||0;
- const paymentMethod=$('salePaymentMethod')?.value||'';
+  const items=tmSaleReadItems();
 
- if(price<=0)
-   return alert('Ingrese el precio de venta.');
+  if(!items.length){
+    return alert(
+      'La factura debe contener al menos un servicio.'
+    );
+  }
 
- if(!paymentMethod)
-   return alert('Seleccione el medio de pago.');
+  for(const item of items){
 
- const subtotal=o.pax*price;
- const discount=subtotal*dp/100;
- const applyTax=$('saleTaxApply')?.checked!==false;
- const x=calc(subtotal-discount,applyTax);
+    if(!(Number(item.quantity)>0)){
+      return alert(
+        'La cantidad de cada servicio debe ser mayor que cero.'
+      );
+    }
 
- const s={
-   id:uid(),
-   number:next('V'),
-   op:o.op,
-   orderId:o.id,
-   clientId:o.clientId,
-   customerName:o.customerName,
-   tourId:o.tourId,
-   tour:o.tour,
-   sellerId:o.sellerId,
-   seller:o.seller,
-   serviceDate:o.serviceDate,
-   pax:o.pax,
-   unitPrice:price,
-   discount:dp,
-   subtotal,
-   discountAmount:discount,
-   taxableAmount:subtotal-discount,
-   taxRate:applyTax?13:0,
-   tax:x.tax,
-   total:x.total,
-   currency:o.currency,
-   paymentMethod
- };
+    if(!(Number(item.unitPrice)>0)){
+      return alert(
+        'Ingrese el precio de venta de todos los servicios.'
+      );
+    }
+  }
 
- db.sales.push(s);
- o.saleId=s.id;
+  const dp=
+    Number(
+      $('saleDiscount')?.value ||
+      0
+    );
 
- saveDB();
- closeModal();
+  if(dp<0 || dp>100){
+    return alert(
+      'El descuento debe estar entre 0% y 100%.'
+    );
+  }
 
- alert('Factura '+s.number+' creada.');
+  const paymentMethod=
+    $('salePaymentMethod')?.value ||
+    '';
+
+  if(!paymentMethod){
+    return alert(
+      'Seleccione el medio de pago.'
+    );
+  }
+
+  const subtotal=
+    items.reduce(
+      (sum,item)=>
+        sum+
+        Number(item.quantity||0) *
+        Number(item.unitPrice||0),
+      0
+    );
+
+  const discount=
+    subtotal *
+    dp /
+    100;
+
+  const applyTax=
+    $('saleTaxApply')?.checked!==false;
+
+  const x=
+    calc(
+      subtotal-discount,
+      applyTax
+    );
+
+  const first=
+    items[0];
+
+  const totalPax=
+    items.reduce(
+      (sum,item)=>
+        sum+
+        Number(item.quantity||0),
+      0
+    );
+
+  const s={
+    id:uid(),
+    number:next('V'),
+    op:o.op,
+    orderId:o.id,
+    clientId:o.clientId,
+    customerName:o.customerName,
+
+    // Compatibilidad histórica:
+    tourId:first.tourId||o.tourId||null,
+    tour:first.description||o.tour||'',
+    pax:totalPax,
+    unitPrice:Number(first.unitPrice||0),
+
+    sellerId:o.sellerId,
+    seller:o.seller,
+    serviceDate:o.serviceDate,
+
+    discount:dp,
+    subtotal,
+    discountAmount:discount,
+    taxableAmount:subtotal-discount,
+    taxRate:applyTax?13:0,
+    tax:x.tax,
+    total:x.total,
+    currency:o.currency,
+    paymentMethod,
+
+    // Nueva estructura multi-servicio.
+    items:items.map((item,index)=>({
+      id:uid(),
+      tourId:item.tourId||null,
+      tour:item.description||'',
+      description:item.description||'',
+      quantity:Number(item.quantity||0),
+      unitPrice:Number(item.unitPrice||0),
+      subtotal:
+        Number(item.quantity||0) *
+        Number(item.unitPrice||0),
+      position:index
+    }))
+  };
+
+  const previousSaleId=o.saleId||null;
+
+  db.sales.push(s);
+  o.saleId=s.id;
+
+  try{
+
+    await saveDB();
+
+    closeModal();
+
+    alert(
+      'Factura '+s.number+' creada.'
+    );
+
+  }catch(e){
+
+    db.sales=
+      db.sales.filter(
+        x=>x.id!==s.id
+      );
+
+    o.saleId=previousSaleId;
+
+    console.error(e);
+
+    alert(
+      'No se pudo crear la factura: '+
+      (e?.message||'Error desconocido')
+    );
+  }
+}
+
+
+function tmSaleEditReadItems(){
+
+  return Array.from(
+    document.querySelectorAll('.tm-sale-edit-item-row')
+  ).map((row,index)=>({
+
+    id:
+      row.dataset.saleItemId ||
+      null,
+
+    tourId:
+      row.dataset.tourId ||
+      null,
+
+    description:
+      row.dataset.description ||
+      '',
+
+    quantity:
+      Number(row.dataset.quantity||0),
+
+    unitPrice:
+      Number(
+        row.querySelector('.tm-sale-edit-price')?.value ||
+        0
+      ),
+
+    position:index
+  }));
 }
 
 
 function editSaleForm(id){
 
- const s=db.sales.find(x=>x.id===id);
+  const s=db.sales.find(
+    x=>x.id===id
+  );
 
- if(!s)return;
+  if(!s)return;
 
- const paymentOptions=[
-   ['', 'No registrado'],
-   ['Cash','Cash'],
-   ['Compra Click','Compra Click'],
-   ['Tarjeta','Tarjeta']
- ].map(([value,label])=>
-   `<option value="${value}" ${s.paymentMethod===value?'selected':''}>${label}</option>`
- ).join('');
+  const hasItems=
+    Array.isArray(s.items) &&
+    s.items.length>0;
 
- modal('Editar factura '+s.number,`
+  const paymentOptions=[
+    ['', 'No registrado'],
+    ['Cash','Cash'],
+    ['Compra Click','Compra Click'],
+    ['Tarjeta','Tarjeta']
+  ].map(([value,label])=>
+    `<option value="${value}" ${s.paymentMethod===value?'selected':''}>${label}</option>`
+  ).join('');
 
- <div style="margin-bottom:18px">
-   <div style="font-size:13px;color:#64748b">
-     Actualice únicamente los datos que necesite modificar
-   </div>
- </div>
 
- <div class="grid" style="gap:14px">
+  // =========================================================
+  // FACTURA HISTORICA: conservar editor tradicional
+  // =========================================================
+  if(!hasItems){
 
-   <div class="field">
-     <label>Cliente</label>
-     <input disabled
+    modal(
+      'Editar factura '+s.number,
+      `
+
+      <div style="margin-bottom:18px">
+        <div style="font-size:13px;color:#64748b">
+          Actualice únicamente los datos que necesite modificar
+        </div>
+      </div>
+
+      <div class="grid" style="gap:14px">
+
+        <div class="field">
+          <label>Cliente</label>
+          <input
+            disabled
             value="${esc(s.customerName)}"
-            style="background:#f8fafc">
-   </div>
+            style="background:#f8fafc"
+          >
+        </div>
 
-   <div class="field">
-     <label>Tour</label>
-     <input disabled
+        <div class="field">
+          <label>Tour</label>
+          <input
+            disabled
             value="${esc(s.tour)}"
-            style="background:#f8fafc">
-   </div>
+            style="background:#f8fafc"
+          >
+        </div>
 
-   <div class="field">
-     <label>Precio de venta unitario *</label>
-     <input id="saleEditPrice"
+        <div class="field">
+          <label>Precio de venta unitario *</label>
+          <input
+            id="saleEditPrice"
             data-sale-id="${s.id}"
             type="number"
             step=".01"
             min="0"
             value="${s.unitPrice||0}"
-            oninput="saleEditCalc()">
-   </div>
+            oninput="saleEditCalc()"
+          >
+        </div>
 
-   <div class="field">
-     <label>Descuento %</label>
-     <input id="saleEditDiscount"
+        <div class="field">
+          <label>Descuento %</label>
+          <input
+            id="saleEditDiscount"
             type="number"
             step=".01"
             min="0"
             value="${s.discount||0}"
-            oninput="saleEditCalc()">
-   </div>
+            oninput="saleEditCalc()"
+          >
+        </div>
 
-   <div class="field">
-     <label>Medio de pago</label>
-     <select id="saleEditPaymentMethod">
-       ${paymentOptions}
-     </select>
-   </div>
+        <div class="field">
+          <label>Medio de pago</label>
+          <select id="saleEditPaymentMethod">
+            ${paymentOptions}
+          </select>
+        </div>
 
-   <div class="field">
-     <label>Impuestos</label>
+        <div class="field">
+          <label>Impuestos</label>
 
-     <label style="
-       min-height:46px;
-       display:flex;
-       align-items:center;
-       gap:10px;
-       padding:0 14px;
-       border:1px solid #dce3ea;
-       border-radius:10px;
-       background:#f8fafc;
-       cursor:pointer;
-       margin:0;
-       box-sizing:border-box
-     ">
-       <input id="saleEditTaxApply"
+          <label style="
+            min-height:46px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            padding:0 14px;
+            border:1px solid #dce3ea;
+            border-radius:10px;
+            background:#f8fafc;
+            cursor:pointer;
+            margin:0;
+            box-sizing:border-box
+          ">
+
+            <input
+              id="saleEditTaxApply"
               type="checkbox"
               ${Number(s.taxRate||0)>0?'checked':''}
               onchange="saleEditCalc()"
@@ -6144,182 +6911,1126 @@ function editSaleForm(id){
                 height:17px;
                 margin:0;
                 flex:0 0 auto
-              ">
-       <span style="font-weight:600;color:#334155">
-         Aplicar IVA 13%
-       </span>
-     </label>
-   </div>
+              "
+            >
 
- </div>
+            <span style="font-weight:600;color:#334155">
+              Aplicar IVA 13%
+            </span>
 
- <div class="card" style="
-   margin-top:18px;
-   padding:18px 20px;
-   background:#f8fafc;
-   border:1px solid #e5eaf0;
-   border-radius:14px
- ">
-   <div style="
-     display:grid;
-     grid-template-columns:repeat(3,minmax(0,1fr));
-     gap:18px
-   ">
-     <div>
-       <small style="color:#64748b">Subtotal</small>
-       <div id="saleEditSub"
-            style="font-size:19px;font-weight:700;margin-top:4px">
-       </div>
-     </div>
+          </label>
+        </div>
 
-     <div>
-       <small style="color:#64748b">IVA 13%</small>
-       <div id="saleEditTax"
-            style="font-size:19px;font-weight:700;margin-top:4px">
-       </div>
-     </div>
+      </div>
 
-     <div style="
-       padding-left:18px;
-       border-left:1px solid #dce3ea
-     ">
-       <small style="color:#64748b;font-weight:700">TOTAL</small>
-       <div id="saleEditTotal"
-            style="font-size:26px;font-weight:800;margin-top:2px">
-       </div>
-     </div>
-   </div>
- </div>
+      <div class="card" style="
+        margin-top:18px;
+        padding:18px 20px;
+        background:#f8fafc;
+        border:1px solid #e5eaf0;
+        border-radius:14px
+      ">
 
- <div class="actions" style="margin-top:18px">
-   <button class="secondary" onclick="closeModal()">Cancelar</button>
-   <button class="primary" onclick="saveSaleEdit('${id}')">
-     Guardar cambios
-   </button>
- </div>
- `);
+        <div style="
+          display:grid;
+          grid-template-columns:repeat(4,minmax(0,1fr));
+          gap:18px
+        ">
 
- saleEditCalc();
+          <div>
+            <small style="color:#64748b">Subtotal</small>
+            <div
+              id="saleEditSub"
+              style="font-size:19px;font-weight:700;margin-top:4px"
+            ></div>
+          </div>
+
+          <div>
+            <small style="color:#64748b">Descuento</small>
+            <div
+              id="saleEditDiscountAmount"
+              style="font-size:19px;font-weight:700;margin-top:4px"
+            ></div>
+          </div>
+
+          <div>
+            <small style="color:#64748b">IVA 13%</small>
+            <div
+              id="saleEditTax"
+              style="font-size:19px;font-weight:700;margin-top:4px"
+            ></div>
+          </div>
+
+          <div style="
+            padding-left:18px;
+            border-left:1px solid #dce3ea
+          ">
+            <small style="color:#64748b;font-weight:700">
+              TOTAL
+            </small>
+            <div
+              id="saleEditTotal"
+              style="font-size:26px;font-weight:800;margin-top:2px"
+            ></div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="actions" style="margin-top:18px">
+
+        <button
+          class="secondary"
+          onclick="closeModal()"
+        >
+          Cancelar
+        </button>
+
+        <button
+          class="primary"
+          onclick="saveSaleEdit('${id}')"
+        >
+          Guardar cambios
+        </button>
+
+      </div>
+      `
+    );
+
+    saleEditCalc();
+    return;
+  }
+
+
+  // =========================================================
+  // FACTURA MODERNA MULTI-SERVICIO
+  // =========================================================
+
+  const rows=s.items.map((item,index)=>`
+
+    <div
+      class="tm-sale-edit-item-row"
+      data-sale-item-id="${esc(item.id||'')}"
+      data-tour-id="${esc(item.tourId||'')}"
+      data-description="${esc(item.description||item.tour||'')}"
+      data-quantity="${Number(item.quantity||0)}"
+      style="
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
+        gap:10px;
+        align-items:center;
+        padding:10px 0;
+        border-bottom:1px solid #edf1f4
+      "
+    >
+
+      <div style="
+        min-width:0;
+        font-weight:700;
+        color:#1f2937
+      ">
+        ${esc(item.description||item.tour||'Servicio')}
+      </div>
+
+      <div style="
+        text-align:center;
+        font-weight:700;
+        color:#475569;
+        font-variant-numeric:tabular-nums
+      ">
+        ${Number(item.quantity||0)}
+      </div>
+
+      <div style="position:relative">
+
+        <span style="
+          position:absolute;
+          left:11px;
+          top:0;
+          height:40px;
+          display:flex;
+          align-items:center;
+          color:#64748b;
+          font-size:12px;
+          font-weight:800;
+          pointer-events:none;
+          z-index:2
+        ">
+          $
+        </span>
+
+        <input
+          class="tm-sale-edit-price"
+          type="number"
+          step=".01"
+          min="0"
+          value="${Number(item.unitPrice||0).toFixed(2)}"
+          oninput="saleEditCalc()"
+          style="
+            width:100%;
+            box-sizing:border-box;
+            padding-left:25px;
+            padding-right:10px;
+            text-align:right;
+            font-variant-numeric:tabular-nums
+          "
+        >
+
+      </div>
+
+      <div
+        class="tm-sale-edit-item-total"
+        style="
+          text-align:right;
+          font-weight:800;
+          color:#0f766e;
+          font-variant-numeric:tabular-nums
+        "
+      >
+        ${money(
+          Number(item.quantity||0) *
+          Number(item.unitPrice||0)
+        )}
+      </div>
+
+    </div>
+
+  `).join('');
+
+
+  modal(
+    'Editar factura '+s.number,
+    `
+
+    <style>
+      .tm-sale-edit-price{
+        appearance:textfield;
+        -moz-appearance:textfield;
+      }
+
+      .tm-sale-edit-price::-webkit-inner-spin-button,
+      .tm-sale-edit-price::-webkit-outer-spin-button{
+        -webkit-appearance:none;
+        margin:0;
+      }
+
+      @media(max-width:760px){
+        .tm-sale-edit-item-row{
+          grid-template-columns:1fr 65px 115px 95px !important;
+        }
+      }
+    </style>
+
+
+    <div style="margin-bottom:18px">
+
+      <div style="font-size:13px;color:#64748b">
+        Puede actualizar el precio de venta de cada servicio
+      </div>
+
+    </div>
+
+
+    <div class="grid" style="gap:14px">
+
+      <div class="field">
+        <label>Cliente</label>
+        <input
+          disabled
+          value="${esc(s.customerName)}"
+          style="background:#f8fafc"
+        >
+      </div>
+
+      <div class="field">
+        <label>Fecha de servicio</label>
+        <input
+          disabled
+          value="${
+            dateOnly(s.serviceDate)
+              .split('-')
+              .reverse()
+              .join('/')
+          }"
+          style="background:#f8fafc"
+        >
+      </div>
+
+    </div>
+
+
+    <div class="card" style="
+      margin-top:18px;
+      padding:16px 18px;
+      border:1px solid #e5eaf0;
+      border-radius:14px
+    ">
+
+      <div style="
+        display:grid;
+        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
+        gap:10px;
+        padding:0 0 8px;
+        border-bottom:1px solid #dce3ea;
+        color:#64748b;
+        font-size:11px;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.04em
+      ">
+
+        <div>Servicio / Tour</div>
+        <div style="text-align:center">Cantidad</div>
+        <div style="text-align:right">Precio venta</div>
+        <div style="text-align:right">Total</div>
+
+      </div>
+
+      ${rows}
+
+    </div>
+
+
+    <div class="grid" style="
+      gap:14px;
+      margin-top:18px
+    ">
+
+      <div class="field">
+
+        <label>Descuento %</label>
+
+        <input
+          id="saleEditDiscount"
+          data-sale-id="${s.id}"
+          type="number"
+          step=".01"
+          min="0"
+          max="100"
+          value="${Number(s.discount||0)}"
+          oninput="saleEditCalc()"
+        >
+
+      </div>
+
+
+      <div class="field">
+
+        <label>Medio de pago</label>
+
+        <select id="saleEditPaymentMethod">
+          ${paymentOptions}
+        </select>
+
+      </div>
+
+
+      <div class="field">
+
+        <label>Impuestos</label>
+
+        <label style="
+          min-height:46px;
+          display:flex;
+          align-items:center;
+          gap:10px;
+          padding:0 14px;
+          border:1px solid #dce3ea;
+          border-radius:10px;
+          background:#f8fafc;
+          cursor:pointer;
+          margin:0;
+          box-sizing:border-box
+        ">
+
+          <input
+            id="saleEditTaxApply"
+            type="checkbox"
+            ${Number(s.taxRate||0)>0?'checked':''}
+            onchange="saleEditCalc()"
+            style="
+              width:17px;
+              height:17px;
+              margin:0;
+              flex:0 0 auto
+            "
+          >
+
+          <span style="font-weight:600;color:#334155">
+            Aplicar IVA 13%
+          </span>
+
+        </label>
+
+      </div>
+
+    </div>
+
+
+    <div class="card" style="
+      margin-top:18px;
+      padding:18px 20px;
+      background:#f8fafc;
+      border:1px solid #e5eaf0;
+      border-radius:14px
+    ">
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:18px
+      ">
+
+        <div>
+          <small style="color:#64748b">Subtotal</small>
+          <div
+            id="saleEditSub"
+            style="font-size:19px;font-weight:700;margin-top:4px"
+          >
+            $0.00
+          </div>
+        </div>
+
+        <div>
+          <small style="color:#64748b">Descuento</small>
+          <div
+            id="saleEditDiscountAmount"
+            style="font-size:19px;font-weight:700;margin-top:4px"
+          >
+            $0.00
+          </div>
+        </div>
+
+        <div>
+          <small style="color:#64748b">IVA 13%</small>
+          <div
+            id="saleEditTax"
+            style="font-size:19px;font-weight:700;margin-top:4px"
+          >
+            $0.00
+          </div>
+        </div>
+
+        <div style="
+          padding-left:18px;
+          border-left:1px solid #dce3ea
+        ">
+          <small style="color:#64748b;font-weight:700">
+            TOTAL
+          </small>
+          <div
+            id="saleEditTotal"
+            style="font-size:26px;font-weight:800;margin-top:2px"
+          >
+            $0.00
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="actions" style="margin-top:18px">
+
+      <button
+        class="secondary"
+        onclick="closeModal()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        class="primary"
+        onclick="saveSaleEdit('${id}')"
+      >
+        Guardar cambios
+      </button>
+
+    </div>
+    `
+  );
+
+  saleEditCalc();
 }
 
 
 function saleEditCalc(){
 
- const s=db.sales.find(
-   x=>x.id===$('saleEditPrice')?.dataset?.saleId
- );
+  const saleId=
+    $('saleEditDiscount')?.dataset?.saleId ||
+    $('saleEditPrice')?.dataset?.saleId;
 
- const price=+$('saleEditPrice')?.value||0;
- const dp=+$('saleEditDiscount')?.value||0;
+  const s=db.sales.find(
+    x=>x.id===saleId
+  );
 
- const order=s
-   ?db.orders.find(x=>x.id===s.orderId)
-   :null;
+  if(!s)return;
 
- const pax=order?.pax||s?.pax||1;
- const applyTax=$('saleEditTaxApply')?.checked!==false;
+  const hasItems=
+    Array.isArray(s.items) &&
+    s.items.length>0;
 
- const subtotal=pax*price;
- const discount=subtotal*dp/100;
- const x=calc(subtotal-discount,applyTax);
+  let subtotal=0;
 
- if($('saleEditSub'))
-   $('saleEditSub').textContent=money(subtotal);
 
- if($('saleEditTax'))
-   $('saleEditTax').textContent=applyTax
-     ?money(x.tax)
-     :'No aplica';
+  if(hasItems){
 
- if($('saleEditTotal'))
-   $('saleEditTotal').textContent=money(x.total);
+    const items=tmSaleEditReadItems();
+
+    document
+      .querySelectorAll('.tm-sale-edit-item-row')
+      .forEach((row,index)=>{
+
+        const item=items[index];
+
+        const lineTotal=
+          Number(item?.quantity||0) *
+          Number(item?.unitPrice||0);
+
+        subtotal+=lineTotal;
+
+        const target=
+          row.querySelector(
+            '.tm-sale-edit-item-total'
+          );
+
+        if(target){
+          target.textContent=
+            money(lineTotal);
+        }
+      });
+
+  }else{
+
+    const price=
+      Number(
+        $('saleEditPrice')?.value ||
+        0
+      );
+
+    const order=db.orders.find(
+      x=>x.id===s.orderId
+    );
+
+    const pax=
+      Number(
+        order?.pax ||
+        s.pax ||
+        1
+      );
+
+    subtotal=
+      pax *
+      price;
+  }
+
+
+  const dp=
+    Number(
+      $('saleEditDiscount')?.value ||
+      0
+    );
+
+  const discount=
+    subtotal *
+    dp /
+    100;
+
+  const applyTax=
+    $('saleEditTaxApply')?.checked!==false;
+
+  const x=
+    calc(
+      subtotal-discount,
+      applyTax
+    );
+
+
+  if($('saleEditSub')){
+    $('saleEditSub').textContent=
+      money(subtotal);
+  }
+
+  if($('saleEditDiscountAmount')){
+    $('saleEditDiscountAmount').textContent=
+      '-'+money(discount);
+  }
+
+  if($('saleEditTax')){
+    $('saleEditTax').textContent=
+      applyTax
+        ?money(x.tax)
+        :'No aplica';
+  }
+
+  if($('saleEditTotal')){
+    $('saleEditTotal').textContent=
+      money(x.total);
+  }
 }
 
 
 async function saveSaleEdit(id){
 
- const s=db.sales.find(x=>x.id===id);
+  const s=db.sales.find(
+    x=>x.id===id
+  );
 
- if(!s)return;
+  if(!s)return;
 
- const price=+$('saleEditPrice').value||0;
- const dp=+$('saleEditDiscount').value||0;
- const paymentMethod=$('saleEditPaymentMethod')?.value||'';
+  const original=
+    JSON.parse(
+      JSON.stringify(s)
+    );
 
- if(price<=0)
-   return alert('Ingrese el precio de venta.');
+  const hasItems=
+    Array.isArray(s.items) &&
+    s.items.length>0;
 
- const applyTax=$('saleEditTaxApply')?.checked!==false;
+  const dp=
+    Number(
+      $('saleEditDiscount')?.value ||
+      0
+    );
 
- const subtotal=(s.pax||1)*price;
- const discount=subtotal*dp/100;
- const x=calc(subtotal-discount,applyTax);
+  if(dp<0 || dp>100){
+    return alert(
+      'El descuento debe estar entre 0% y 100%.'
+    );
+  }
 
- Object.assign(s,{
-   unitPrice:price,
-   discount:dp,
-   subtotal,
-   discountAmount:discount,
-   taxableAmount:subtotal-discount,
-   taxRate:applyTax?13:0,
-   tax:x.tax,
-   total:x.total,
-   paymentMethod
- });
+  const paymentMethod=
+    $('saleEditPaymentMethod')?.value ||
+    '';
 
- await saveDB();
- closeModal();
+  const applyTax=
+    $('saleEditTaxApply')?.checked!==false;
 
- alert('Factura '+s.number+' actualizada.');
+
+  if(hasItems){
+
+    const items=
+      tmSaleEditReadItems();
+
+    if(!items.length){
+      return alert(
+        'La factura debe contener al menos un servicio.'
+      );
+    }
+
+    for(const item of items){
+
+      if(!(Number(item.quantity)>0)){
+        return alert(
+          'La cantidad de cada servicio debe ser mayor que cero.'
+        );
+      }
+
+      if(!(Number(item.unitPrice)>0)){
+        return alert(
+          'Ingrese el precio de venta de todos los servicios.'
+        );
+      }
+    }
+
+    const subtotal=
+      items.reduce(
+        (sum,item)=>
+          sum+
+          Number(item.quantity||0) *
+          Number(item.unitPrice||0),
+        0
+      );
+
+    const discount=
+      subtotal *
+      dp /
+      100;
+
+    const x=
+      calc(
+        subtotal-discount,
+        applyTax
+      );
+
+    const first=items[0];
+
+    const totalPax=
+      items.reduce(
+        (sum,item)=>
+          sum+
+          Number(item.quantity||0),
+        0
+      );
+
+    Object.assign(
+      s,
+      {
+        tourId:
+          first.tourId ||
+          s.tourId ||
+          null,
+
+        tour:
+          first.description ||
+          s.tour ||
+          '',
+
+        pax:totalPax,
+
+        unitPrice:
+          Number(
+            first.unitPrice ||
+            0
+          ),
+
+        discount:dp,
+        subtotal,
+        discountAmount:discount,
+        taxableAmount:subtotal-discount,
+        taxRate:applyTax?13:0,
+        tax:x.tax,
+        total:x.total,
+        paymentMethod,
+
+        items:items.map(
+          (item,index)=>({
+            id:item.id,
+            tourId:item.tourId||null,
+            tour:item.description||'',
+            description:item.description||'',
+            quantity:Number(item.quantity||0),
+            unitPrice:Number(item.unitPrice||0),
+            subtotal:
+              Number(item.quantity||0) *
+              Number(item.unitPrice||0),
+            position:index
+          })
+        )
+      }
+    );
+
+  }else{
+
+    const price=
+      Number(
+        $('saleEditPrice')?.value ||
+        0
+      );
+
+    if(price<=0){
+      return alert(
+        'Ingrese el precio de venta.'
+      );
+    }
+
+    const subtotal=
+      Number(s.pax||1) *
+      price;
+
+    const discount=
+      subtotal *
+      dp /
+      100;
+
+    const x=
+      calc(
+        subtotal-discount,
+        applyTax
+      );
+
+    Object.assign(
+      s,
+      {
+        unitPrice:price,
+        discount:dp,
+        subtotal,
+        discountAmount:discount,
+        taxableAmount:subtotal-discount,
+        taxRate:applyTax?13:0,
+        tax:x.tax,
+        total:x.total,
+        paymentMethod
+      }
+    );
+  }
+
+
+  try{
+
+    await saveDB();
+
+    closeModal();
+
+    alert(
+      'Factura '+s.number+' actualizada.'
+    );
+
+  }catch(e){
+
+    const index=
+      db.sales.findIndex(
+        x=>x.id===id
+      );
+
+    if(index>=0){
+      db.sales[index]=original;
+    }
+
+    console.error(e);
+
+    alert(
+      'No se pudo actualizar la factura: '+
+      (e?.message||'Error desconocido')
+    );
+  }
 }
 
 
 function saleDoc(s,ticket=false){
 
- const base=company('FACTURA INTERNA DE VENTA');
- const method=esc(s.paymentMethod||'No registrado');
+  const base=
+    company(
+      'FACTURA INTERNA DE VENTA'
+    );
 
- return ticket
- ?`<div class="ticket">
-     ${base}
-     <b>Factura:</b> ${s.number}<br>
-     <b>Operación:</b> ${s.op}<br>
-     <b>Cliente:</b> ${esc(s.customerName)}<br>
-     <b>Vendedor:</b> ${esc(s.seller)}<br>
-     <b>Tour:</b> ${esc(s.tour)}<br>
-     <b>Servicio:</b> ${dateOnly(s.serviceDate).split('-').reverse().join('/')}<br>
-     <b>Medio de pago:</b> ${method}
-     <hr>
-     Subtotal ${money(s.subtotal)}<br>
-     Descuento -${money(s.discountAmount)}<br>
-     ${Number(s.taxRate||0)>0
-       ?'IVA 13% '+money(s.tax)
-       :'IVA: No aplica'}
-     <br>
-     <b>TOTAL ${money(s.total)}</b>
-   </div>`
- :`<div class="document">
-     ${base}
-     <div class="meta">
-       <b>Factura:</b> ${s.number}<br>
-       <b>Operación:</b> ${s.op}<br>
-       <b>Cliente:</b> ${esc(s.customerName)}<br>
-       <b>Vendedor:</b> ${esc(s.seller)}<br>
-       <b>Tour:</b> ${esc(s.tour)}<br>
-       <b>Fecha de servicio:</b> ${dateOnly(s.serviceDate).split('-').reverse().join('/')}<br>
-       <b>Pasajeros:</b> ${s.pax}<br>
-       <b>Medio de pago:</b> ${method}
-     </div>
-     <hr>
-     Subtotal: ${money(s.subtotal)}<br>
-     Descuento: -${money(s.discountAmount)}<br>
-     ${Number(s.taxRate||0)>0
-       ?'IVA 13%: '+money(s.tax)
-       :'IVA: No aplica'}
-     <div class="total">
-       TOTAL: ${money(s.total)}
-     </div>
-   </div>`;
+  const method=
+    esc(
+      s.paymentMethod ||
+      'No registrado'
+    );
+
+  const hasItems=
+    Array.isArray(s.items) &&
+    s.items.length>0;
+
+  const serviceDate=
+    dateOnly(s.serviceDate)
+      .split('-')
+      .reverse()
+      .join('/');
+
+
+  // =========================================================
+  // FACTURA HISTORICA
+  // =========================================================
+  if(!hasItems){
+
+    return ticket
+
+    ?`<div class="ticket">
+
+        ${base}
+
+        <b>Factura:</b> ${s.number}<br>
+        <b>Operación:</b> ${s.op}<br>
+        <b>Cliente:</b> ${esc(s.customerName)}<br>
+        <b>Vendedor:</b> ${esc(s.seller)}<br>
+        <b>Tour:</b> ${esc(s.tour)}<br>
+        <b>Servicio:</b> ${serviceDate}<br>
+        <b>Medio de pago:</b> ${method}
+
+        <hr>
+
+        Subtotal ${money(s.subtotal)}<br>
+        Descuento -${money(s.discountAmount)}<br>
+
+        ${
+          Number(s.taxRate||0)>0
+            ?'IVA 13% '+money(s.tax)
+            :'IVA: No aplica'
+        }
+
+        <br>
+
+        <b>
+          TOTAL ${money(s.total)}
+        </b>
+
+      </div>`
+
+    :`<div class="document">
+
+        ${base}
+
+        <div class="meta">
+
+          <b>Factura:</b> ${s.number}<br>
+          <b>Operación:</b> ${s.op}<br>
+          <b>Cliente:</b> ${esc(s.customerName)}<br>
+          <b>Vendedor:</b> ${esc(s.seller)}<br>
+          <b>Tour:</b> ${esc(s.tour)}<br>
+          <b>Fecha de servicio:</b> ${serviceDate}<br>
+          <b>Pasajeros:</b> ${s.pax}<br>
+          <b>Medio de pago:</b> ${method}
+
+        </div>
+
+        <hr>
+
+        Subtotal: ${money(s.subtotal)}<br>
+        Descuento: -${money(s.discountAmount)}<br>
+
+        ${
+          Number(s.taxRate||0)>0
+            ?'IVA 13%: '+money(s.tax)
+            :'IVA: No aplica'
+        }
+
+        <div class="total">
+          TOTAL: ${money(s.total)}
+        </div>
+
+      </div>`;
+  }
+
+
+  // =========================================================
+  // FACTURA MULTI-SERVICIO
+  // =========================================================
+
+  const ticketItems=
+    s.items.map(item=>`
+
+      <div style="margin:7px 0">
+
+        <b>
+          ${esc(item.description||item.tour||'Servicio')}
+        </b>
+
+        <br>
+
+        ${
+          Number(item.quantity||0)
+        } × ${
+          money(item.unitPrice)
+        }
+
+        <span style="float:right">
+          ${
+            money(
+              Number(item.quantity||0) *
+              Number(item.unitPrice||0)
+            )
+          }
+        </span>
+
+      </div>
+
+    `).join('');
+
+
+  const documentItems=
+    s.items.map(item=>`
+
+      <tr>
+
+        <td style="
+          padding:9px 8px;
+          border-bottom:1px solid #e5e7eb
+        ">
+          ${esc(item.description||item.tour||'Servicio')}
+        </td>
+
+        <td style="
+          padding:9px 8px;
+          border-bottom:1px solid #e5e7eb;
+          text-align:center
+        ">
+          ${Number(item.quantity||0)}
+        </td>
+
+        <td style="
+          padding:9px 8px;
+          border-bottom:1px solid #e5e7eb;
+          text-align:right
+        ">
+          ${money(item.unitPrice)}
+        </td>
+
+        <td style="
+          padding:9px 8px;
+          border-bottom:1px solid #e5e7eb;
+          text-align:right;
+          font-weight:700
+        ">
+          ${
+            money(
+              Number(item.quantity||0) *
+              Number(item.unitPrice||0)
+            )
+          }
+        </td>
+
+      </tr>
+
+    `).join('');
+
+
+  return ticket
+
+  ?`<div class="ticket">
+
+      ${base}
+
+      <b>Factura:</b> ${s.number}<br>
+      <b>Operación:</b> ${s.op}<br>
+      <b>Cliente:</b> ${esc(s.customerName)}<br>
+      <b>Vendedor:</b> ${esc(s.seller)}<br>
+      <b>Fecha servicio:</b> ${serviceDate}<br>
+      <b>Medio de pago:</b> ${method}
+
+      <hr>
+
+      ${ticketItems}
+
+      <hr>
+
+      Subtotal ${money(s.subtotal)}<br>
+
+      Descuento -${money(s.discountAmount)}<br>
+
+      ${
+        Number(s.taxRate||0)>0
+          ?'IVA 13% '+money(s.tax)
+          :'IVA: No aplica'
+      }
+
+      <br>
+
+      <b>
+        TOTAL ${money(s.total)}
+      </b>
+
+    </div>`
+
+  :`<div class="document">
+
+      ${base}
+
+      <div class="meta">
+
+        <b>Factura:</b> ${s.number}<br>
+        <b>Operación:</b> ${s.op}<br>
+        <b>Cliente:</b> ${esc(s.customerName)}<br>
+        <b>Vendedor:</b> ${esc(s.seller)}<br>
+        <b>Fecha de servicio:</b> ${serviceDate}<br>
+        <b>Medio de pago:</b> ${method}
+
+      </div>
+
+
+      <table style="
+        width:100%;
+        border-collapse:collapse;
+        margin-top:18px;
+        font-size:13px
+      ">
+
+        <thead>
+
+          <tr style="
+            background:#f8fafc;
+            color:#475569
+          ">
+
+            <th style="
+              padding:9px 8px;
+              text-align:left;
+              border-bottom:1px solid #dce3ea
+            ">
+              Servicio
+            </th>
+
+            <th style="
+              padding:9px 8px;
+              text-align:center;
+              border-bottom:1px solid #dce3ea
+            ">
+              Cant.
+            </th>
+
+            <th style="
+              padding:9px 8px;
+              text-align:right;
+              border-bottom:1px solid #dce3ea
+            ">
+              Precio
+            </th>
+
+            <th style="
+              padding:9px 8px;
+              text-align:right;
+              border-bottom:1px solid #dce3ea
+            ">
+              Total
+            </th>
+
+          </tr>
+
+        </thead>
+
+        <tbody>
+          ${documentItems}
+        </tbody>
+
+      </table>
+
+
+      <div style="
+        margin-top:18px;
+        margin-left:auto;
+        max-width:310px;
+        line-height:1.8
+      ">
+
+        <div style="
+          display:flex;
+          justify-content:space-between
+        ">
+          <span>Subtotal</span>
+          <strong>${money(s.subtotal)}</strong>
+        </div>
+
+        <div style="
+          display:flex;
+          justify-content:space-between
+        ">
+          <span>Descuento</span>
+          <strong>-${money(s.discountAmount)}</strong>
+        </div>
+
+        <div style="
+          display:flex;
+          justify-content:space-between
+        ">
+          <span>
+            ${
+              Number(s.taxRate||0)>0
+                ?'IVA 13%'
+                :'IVA'
+            }
+          </span>
+
+          <strong>
+            ${
+              Number(s.taxRate||0)>0
+                ?money(s.tax)
+                :'No aplica'
+            }
+          </strong>
+        </div>
+
+      </div>
+
+
+      <div class="total">
+        TOTAL: ${money(s.total)}
+      </div>
+
+    </div>`;
 }
 
 

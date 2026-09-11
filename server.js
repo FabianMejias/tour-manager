@@ -1402,6 +1402,58 @@ const q = (text, params=[]) => pool.query(text, params);
 
 
 
+
+// ============================================================
+// DETALLE DE SERVICIOS DE FACTURAS
+// Migración aditiva.
+// No modifica ni convierte facturas históricas.
+// ============================================================
+
+const saleItemsReady = (async () => {
+  try {
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id UUID PRIMARY KEY,
+        sale_id UUID NOT NULL
+          REFERENCES sales(id) ON DELETE CASCADE,
+        tour_id UUID
+          REFERENCES tours(id),
+        description TEXT NOT NULL,
+        quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
+        unit_price NUMERIC(14,2) NOT NULL DEFAULT 0,
+        subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_sale_items_sale
+      ON sale_items(sale_id)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_sale_items_tour
+      ON sale_items(tour_id)
+    `);
+
+    console.log('OK: detalle de servicios de facturas disponible.');
+
+  } catch (e) {
+
+    console.error(
+      'ERROR creando detalle de servicios de facturas:',
+      e.message
+    );
+
+    throw e;
+  }
+})();
+
+
 // ============================================================
 // DETALLE DE SERVICIOS DE ORDENES DE COMPRA
 // Migración aditiva.
@@ -2058,7 +2110,7 @@ app.get('/api/health', async (req,res) => {
 });
 
 async function getState(client) {
-  const [clients,suppliers,sellers,tours,orders,sales,payments,links,sequences,settings,users,orderItems] = await Promise.all([
+  const [clients,suppliers,sellers,tours,orders,sales,payments,links,sequences,settings,users,orderItems,saleItems] = await Promise.all([
     client.query(`SELECT id,name,type,phone,email,currency,notes,active FROM clients ORDER BY name`),
     client.query(`SELECT id,name,contact,phone,email,notes,active FROM suppliers ORDER BY name`),
     client.query(`SELECT id,name,email,phone,commission_rate,active FROM sellers ORDER BY name`),
@@ -2118,6 +2170,23 @@ async function getState(client) {
       FROM purchase_order_items
       WHERE active = TRUE
       ORDER BY purchase_order_id, position, created_at, id
+    `),
+    client.query(`
+      SELECT
+        id,
+        sale_id,
+        tour_id,
+        description,
+        quantity,
+        unit_price,
+        subtotal,
+        position,
+        active,
+        created_at,
+        updated_at
+      FROM sale_items
+      WHERE active = TRUE
+      ORDER BY sale_id, position, created_at, id
     `)
   ]);
   const byId = (rows) => Object.fromEntries(rows.map(r=>[r.id,r]));
@@ -2148,6 +2217,28 @@ async function getState(client) {
     });
   }
 
+  const saleItemsBySale = {};
+
+  for (const item of saleItems.rows) {
+
+    if (!saleItemsBySale[item.sale_id]) {
+      saleItemsBySale[item.sale_id] = [];
+    }
+
+    saleItemsBySale[item.sale_id].push({
+      id: item.id,
+      tourId: item.tour_id,
+      tour: ts[item.tour_id]?.name || item.description || '',
+      description: item.description || '',
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unit_price || 0),
+      subtotal: Number(item.subtotal || 0),
+      position: Number(item.position || 0),
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    });
+  }
+
   return {
     clients: clients.rows.map(x=>({id:x.id,name:x.name,type:x.type||'',phone:x.phone||'',email:x.email||'',currency:x.currency||'USD',notes:x.notes||''})),
     suppliers: suppliers.rows.map(x=>({id:x.id,name:x.name,contact:x.contact||'',phone:x.phone||'',email:x.email||'',notes:x.notes||''})),
@@ -2171,7 +2262,7 @@ async function getState(client) {
       currentRateActive:x.current_rate_active
     })),
     orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||'',items:orderItemsByOrder[x.id]||[]})),
-    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||''})),
+    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||'',items:saleItemsBySale[x.id]||[]})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
     seq: Object.fromEntries(sequences.rows.map(x=>[x.code,Number(x.current_value)])),
@@ -2322,52 +2413,131 @@ async function replaceState(client, db) {
           throw err;
         }
 
-        // ====================================================
-        // PROTECCION TEMPORAL DE FACTURA MULTI-SERVICIO
-        // ====================================================
-        //
-        // 0 items = OC histórica: continúa funcionando.
-        // 1 item  = OC moderna de un servicio: puede facturar.
-        // 2+      = esperar factura multi-servicio.
-        //
-        // Solo se valida para ventas NUEVAS, por lo que ninguna
-        // factura histórica existente resulta afectada.
-        // ====================================================
-
-        if (orderCheck.rows.length) {
-          const itemCountResult = await client.query(
-            `
-              SELECT COUNT(*)::int AS item_count
-              FROM purchase_order_items
-              WHERE purchase_order_id=$1
-                AND active=TRUE
-            `,
-            [linkedOrder.id]
-          );
-
-          const itemCount =
-            Number(
-              itemCountResult.rows[0]?.item_count || 0
-            );
-
-          if (itemCount > 1) {
-            const err = new Error(
-              'La OC ' +
-              orderCheck.rows[0].number +
-              ' contiene varios servicios. ' +
-              'La facturación multi-servicio todavía no está habilitada.'
-            );
-
-            err.code = 'OC_MULTI_SERVICE_INVOICE_PENDING';
-            throw err;
-          }
-        }
-
       }
 
     }
 
     for (const x of incomingSales) {
+
+      // ======================================================
+      // TOTALES AUTORITATIVOS PARA FACTURAS CON ITEMS
+      // ======================================================
+      //
+      // Las facturas históricas sin items continúan usando
+      // exactamente sus campos originales.
+      //
+      if (Array.isArray(x.items) && x.items.length) {
+
+        let subtotalItems = 0;
+        let totalPassengers = 0;
+
+        for (const item of x.items) {
+
+          const quantity =
+            Number(item?.quantity || 0);
+
+          const unitPrice =
+            Number(item?.unitPrice || 0);
+
+          if (!(quantity > 0)) {
+            const err = new Error(
+              'La cantidad de cada servicio facturado debe ser mayor que cero.'
+            );
+            err.code = 'SALE_ITEM_INVALID_QUANTITY';
+            throw err;
+          }
+
+          if (unitPrice < 0) {
+            const err = new Error(
+              'El precio de venta de un servicio no puede ser negativo.'
+            );
+            err.code = 'SALE_ITEM_INVALID_PRICE';
+            throw err;
+          }
+
+          subtotalItems += quantity * unitPrice;
+          totalPassengers += quantity;
+        }
+
+        subtotalItems =
+          Math.round(subtotalItems * 100) / 100;
+
+        const discountPercent =
+          Math.max(
+            0,
+            Number(x.discount || 0)
+          );
+
+        const discountAmount =
+          Math.round(
+            subtotalItems *
+            discountPercent /
+            100 *
+            100
+          ) / 100;
+
+        const taxableAmount =
+          Math.round(
+            (subtotalItems - discountAmount) *
+            100
+          ) / 100;
+
+        const taxRate =
+          Number(x.taxRate || 0) > 0
+            ? 13
+            : 0;
+
+        const taxAmount =
+          Math.round(
+            taxableAmount *
+            taxRate /
+            100 *
+            100
+          ) / 100;
+
+        const total =
+          Math.round(
+            (taxableAmount + taxAmount) *
+            100
+          ) / 100;
+
+        const firstItem =
+          x.items[0] || {};
+
+        // Campos principales de sales se mantienen también
+        // por compatibilidad con reportes históricos.
+        x.tourId =
+          firstItem.tourId ||
+          x.tourId ||
+          null;
+
+        x.pax =
+          totalPassengers;
+
+        x.unitPrice =
+          Number(firstItem.unitPrice || 0);
+
+        x.subtotal =
+          subtotalItems;
+
+        x.discount =
+          discountPercent;
+
+        x.discountAmount =
+          discountAmount;
+
+        x.taxableAmount =
+          taxableAmount;
+
+        x.taxRate =
+          taxRate;
+
+        x.tax =
+          taxAmount;
+
+        x.total =
+          total;
+      }
       await client.query(`
         INSERT INTO sales(
           id,number,operation_number,client_id,seller_id,tour_id,client_name,
@@ -2401,6 +2571,194 @@ async function replaceState(client, db) {
         x.currency||'USD',
         x.paymentMethod||null
       ]);
+
+      // ======================================================
+      // DETALLE DE SERVICIOS DE FACTURA
+      // ======================================================
+      //
+      // Solo procesa items cuando la factura los trae.
+      // Las facturas históricas sin items permanecen intactas.
+      //
+      if (Array.isArray(x.items)) {
+
+        const incomingItemIds = [];
+
+        for (let i = 0; i < x.items.length; i++) {
+
+          const item = x.items[i] || {};
+
+          const itemId =
+            item.id ||
+            require('crypto').randomUUID();
+
+          const quantity =
+            Number(item.quantity || 0);
+
+          const unitPrice =
+            Number(item.unitPrice || 0);
+
+          if (!(quantity > 0)) {
+            const err = new Error(
+              'La cantidad de cada servicio facturado debe ser mayor que cero.'
+            );
+            err.code = 'SALE_ITEM_INVALID_QUANTITY';
+            throw err;
+          }
+
+          if (unitPrice < 0) {
+            const err = new Error(
+              'El precio de venta de un servicio no puede ser negativo.'
+            );
+            err.code = 'SALE_ITEM_INVALID_PRICE';
+            throw err;
+          }
+
+          const tourId =
+            item.tourId || null;
+
+          let description =
+            String(
+              item.description ||
+              item.tour ||
+              ''
+            ).trim();
+
+          // Si hay tour_id, el servidor obtiene el nombre real.
+          if (tourId) {
+
+            const tourResult = await client.query(
+              `
+                SELECT name
+                FROM tours
+                WHERE id=$1
+                LIMIT 1
+              `,
+              [tourId]
+            );
+
+            if (!tourResult.rows.length) {
+              const err = new Error(
+                'Uno de los servicios de la factura no existe.'
+              );
+              err.code = 'SALE_ITEM_TOUR_NOT_FOUND';
+              throw err;
+            }
+
+            description =
+              tourResult.rows[0].name ||
+              description;
+          }
+
+          if (!description) {
+            const err = new Error(
+              'Cada línea de factura debe tener una descripción.'
+            );
+            err.code = 'SALE_ITEM_DESCRIPTION_REQUIRED';
+            throw err;
+          }
+
+          const subtotal =
+            Math.round(
+              quantity *
+              unitPrice *
+              100
+            ) / 100;
+
+          incomingItemIds.push(itemId);
+
+          await client.query(
+            `
+              INSERT INTO sale_items(
+                id,
+                sale_id,
+                tour_id,
+                description,
+                quantity,
+                unit_price,
+                subtotal,
+                position,
+                active,
+                updated_at
+              )
+              VALUES(
+                $1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW()
+              )
+              ON CONFLICT(id) DO UPDATE SET
+                sale_id=EXCLUDED.sale_id,
+                tour_id=EXCLUDED.tour_id,
+                description=EXCLUDED.description,
+                quantity=EXCLUDED.quantity,
+                unit_price=EXCLUDED.unit_price,
+                subtotal=EXCLUDED.subtotal,
+                position=EXCLUDED.position,
+                active=TRUE,
+                updated_at=NOW()
+            `,
+            [
+              itemId,
+              x.id,
+              tourId,
+              description,
+              quantity,
+              unitPrice,
+              subtotal,
+              Number(
+                item.position ?? i
+              )
+            ]
+          );
+
+          // Mantener el mismo ID también en memoria durante
+          // esta petición, para evitar duplicarlo si el estado
+          // vuelve a guardarse antes de una recarga completa.
+          item.id = itemId;
+          item.description = description;
+          item.quantity = quantity;
+          item.unitPrice = unitPrice;
+          item.subtotal = subtotal;
+          item.position =
+            Number(item.position ?? i);
+        }
+
+        // Si se está editando una factura moderna, cualquier
+        // línea anteriormente existente que ya no venga en
+        // items[] se conserva físicamente pero queda inactiva.
+        if (incomingItemIds.length) {
+
+          await client.query(
+            `
+              UPDATE sale_items
+              SET
+                active=FALSE,
+                updated_at=NOW()
+              WHERE sale_id=$1
+                AND active=TRUE
+                AND NOT (id = ANY($2::uuid[]))
+            `,
+            [
+              x.id,
+              incomingItemIds
+            ]
+          );
+
+        } else {
+
+          // items: [] explícito significa que la factura moderna
+          // ya no contiene líneas activas.
+          await client.query(
+            `
+              UPDATE sale_items
+              SET
+                active=FALSE,
+                updated_at=NOW()
+              WHERE sale_id=$1
+                AND active=TRUE
+            `,
+            [x.id]
+          );
+        }
+      }
+
     }
 
     for (const x of (db.orders || [])) {
@@ -2546,6 +2904,7 @@ app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 async function startServer() {
   try {
     await purchaseOrderItemsReady;
+    await saleItemsReady;
 
     app.listen(port, () => {
       console.log(`Tour Manager escuchando en ${port}`);
