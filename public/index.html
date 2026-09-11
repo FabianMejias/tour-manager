@@ -893,6 +893,278 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 }
 </style>
 
+
+<style>
+/* ===== OC FILA COMPACTA + BUSCADOR TOUR ===== */
+
+/*
+  Toda la fila debe caber dentro de la tarjeta.
+  La primera columna absorbe el espacio disponible.
+*/
+.tm-oc-item{
+  width:100% !important;
+  max-width:100% !important;
+  box-sizing:border-box !important;
+
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    72px
+    142px
+    105px
+    32px !important;
+
+  gap:10px !important;
+  align-items:center !important;
+
+  overflow:visible !important;
+}
+
+
+/* Ninguna columna puede empujar a las demás */
+.tm-oc-item > *{
+  min-width:0 !important;
+  max-width:100% !important;
+  box-sizing:border-box !important;
+}
+
+
+/* ==============================
+   BUSCADOR TOUR
+   ============================== */
+
+.tm-oc-item-service{
+  min-width:0 !important;
+  width:100% !important;
+}
+
+.tm-oc-tour-search{
+  width:100% !important;
+  max-width:100% !important;
+  height:46px !important;
+
+  box-sizing:border-box !important;
+
+  padding:0 13px !important;
+
+  font-size:14px !important;
+
+  background:#fff !important;
+
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+
+.tm-oc-tour-search::-webkit-search-cancel-button{
+  cursor:pointer;
+}
+
+.tm-oc-tour-search.tm-tour-search-invalid{
+  border-color:#ef4444 !important;
+  background:#fffafa !important;
+}
+
+
+/* ==============================
+   CANTIDAD
+   ============================== */
+
+.tm-oc-qty-wrap{
+  width:72px !important;
+  min-width:0 !important;
+}
+
+.tm-oc-item .oc-item-qty{
+  width:100% !important;
+  min-width:0 !important;
+  max-width:100% !important;
+
+  height:46px !important;
+
+  box-sizing:border-box !important;
+
+  padding:0 6px !important;
+
+  text-align:center !important;
+
+  font-weight:800 !important;
+  font-size:15px !important;
+
+  position:static !important;
+  z-index:auto !important;
+
+  margin:0 !important;
+
+  appearance:textfield !important;
+  -moz-appearance:textfield !important;
+}
+
+
+/* ==============================
+   COSTO
+   ============================== */
+
+.tm-oc-item .tm-oc-cost-wrap{
+  width:100% !important;
+  min-width:0 !important;
+  max-width:142px !important;
+
+  height:46px !important;
+
+  position:relative !important;
+
+  display:block !important;
+
+  margin:0 !important;
+
+  box-sizing:border-box !important;
+  overflow:hidden !important;
+}
+
+.tm-oc-cost-symbol{
+  position:absolute !important;
+
+  left:12px !important;
+  top:0 !important;
+
+  height:46px !important;
+
+  display:flex !important;
+  align-items:center !important;
+
+  z-index:2 !important;
+
+  pointer-events:none !important;
+
+  font-weight:700 !important;
+  color:#64748b !important;
+}
+
+.tm-oc-item .tm-oc-cost-wrap .oc-item-cost{
+  width:100% !important;
+  min-width:0 !important;
+  max-width:100% !important;
+
+  height:46px !important;
+
+  box-sizing:border-box !important;
+
+  padding:
+    0
+    10px
+    0
+    32px !important;
+
+  text-align:right !important;
+
+  font-variant-numeric:
+    tabular-nums !important;
+
+  appearance:textfield !important;
+  -moz-appearance:textfield !important;
+}
+
+
+/* ==============================
+   QUITAR SPINNERS
+   ============================== */
+
+.tm-oc-item input[type="number"]::-webkit-inner-spin-button,
+.tm-oc-item input[type="number"]::-webkit-outer-spin-button{
+  -webkit-appearance:none !important;
+  appearance:none !important;
+  margin:0 !important;
+  display:none !important;
+}
+
+
+/* ==============================
+   TOTAL
+   ============================== */
+
+.tm-oc-item-total{
+  width:100% !important;
+  min-width:0 !important;
+
+  text-align:right !important;
+
+  white-space:nowrap !important;
+  overflow:hidden !important;
+
+  font-variant-numeric:
+    tabular-nums !important;
+}
+
+.tm-oc-item-total .oc-item-total{
+  display:block !important;
+
+  width:100% !important;
+
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+
+  font-weight:800 !important;
+}
+
+
+/* ==============================
+   ELIMINAR
+   ============================== */
+
+.tm-oc-remove-wrap{
+  width:32px !important;
+
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+}
+
+.tm-oc-item-remove{
+  width:30px !important;
+  height:30px !important;
+
+  min-width:30px !important;
+  max-width:30px !important;
+
+  padding:0 !important;
+  margin:0 !important;
+
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+
+  line-height:1 !important;
+}
+
+
+/*
+  En pantallas estrechas reducimos primero
+  costo y total; nunca ocultamos cantidad.
+*/
+@media(max-width:900px){
+
+  .tm-oc-item{
+    grid-template-columns:
+      minmax(0,1fr)
+      64px
+      126px
+      92px
+      30px !important;
+
+    gap:8px !important;
+  }
+
+  .tm-oc-qty-wrap{
+    width:64px !important;
+  }
+
+  .tm-oc-item .tm-oc-cost-wrap{
+    max-width:126px !important;
+  }
+}
+</style>
+
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
@@ -4147,6 +4419,126 @@ function orderForm(id=null){
 }
 
 
+function tmOrderTourSearch(input){
+
+  const row=input.closest('[data-oc-item-row]');
+
+  if(!row)return;
+
+  const select=
+    row.querySelector('.oc-item-tour');
+
+  if(!select)return;
+
+  const value=
+    String(input.value||'')
+      .trim()
+      .toLowerCase();
+
+  const tour=db.tours.find(
+    t=>
+      String(t.name||'')
+        .trim()
+        .toLowerCase()===value
+  );
+
+  if(tour){
+
+    select.value=tour.id;
+
+    input.value=tour.name;
+
+    input.classList.remove(
+      'tm-tour-search-invalid'
+    );
+
+    orderItemCostFromTour(select);
+
+  }else{
+
+    select.value='';
+
+    input.classList.toggle(
+      'tm-tour-search-invalid',
+      Boolean(value)
+    );
+  }
+
+  orderCalc();
+}
+
+
+function tmOrderTourSearchBlur(input){
+
+  const row=input.closest('[data-oc-item-row]');
+
+  if(!row)return;
+
+  const select=
+    row.querySelector('.oc-item-tour');
+
+  if(!select)return;
+
+  const typed=
+    String(input.value||'')
+      .trim()
+      .toLowerCase();
+
+  if(!typed){
+    select.value='';
+    return;
+  }
+
+  const exact=db.tours.find(
+    t=>
+      String(t.name||'')
+        .trim()
+        .toLowerCase()===typed
+  );
+
+  if(exact){
+    input.value=exact.name;
+    select.value=exact.id;
+    input.classList.remove('tm-tour-search-invalid');
+    orderItemCostFromTour(select);
+    return;
+  }
+
+  const matches=db.tours.filter(
+    t=>
+      String(t.name||'')
+        .toLowerCase()
+        .includes(typed)
+  );
+
+  // Si lo digitado identifica únicamente un tour,
+  // lo seleccionamos automáticamente.
+  if(matches.length===1){
+
+    const tour=matches[0];
+
+    input.value=tour.name;
+    select.value=tour.id;
+
+    input.classList.remove(
+      'tm-tour-search-invalid'
+    );
+
+    orderItemCostFromTour(select);
+
+  }else{
+
+    select.value='';
+
+    input.classList.add(
+      'tm-tour-search-invalid'
+    );
+  }
+
+  orderCalc();
+}
+
+
 function orderItemRowHTML(item={}){
 
   const tourId=
@@ -4168,6 +4560,12 @@ function orderItemRowHTML(item={}){
       0
     );
 
+  const listId=
+    'tm-tour-list-'+
+    Math.random()
+      .toString(36)
+      .slice(2);
+
   return `
     <div
       class="tm-oc-item"
@@ -4176,9 +4574,35 @@ function orderItemRowHTML(item={}){
 
       <div class="tm-oc-item-service">
 
+        <input
+          type="search"
+          class="tm-oc-tour-search"
+          list="${listId}"
+          autocomplete="off"
+          placeholder="Buscar tour..."
+          value="${esc(tour?.name||'')}"
+          oninput="tmOrderTourSearch(this)"
+          onchange="tmOrderTourSearch(this)"
+          onblur="tmOrderTourSearchBlur(this)">
+
+        <datalist id="${listId}">
+          ${
+            db.tours.map(t=>`
+              <option value="${esc(t.name)}"></option>
+            `).join('')
+          }
+        </datalist>
+
+        <!--
+          El select se conserva oculto para mantener
+          compatibilidad con todas las funciones existentes.
+        -->
         <select
           class="oc-item-tour"
-          onchange="orderItemCostFromTour(this)">
+          onchange="orderItemCostFromTour(this)"
+          style="display:none">
+
+          <option value=""></option>
 
           ${
             db.tours.map(t=>`
@@ -4198,7 +4622,9 @@ function orderItemRowHTML(item={}){
 
       </div>
 
-      <div>
+
+      <div class="tm-oc-qty-wrap">
+
         <input
           class="oc-item-qty"
           type="number"
@@ -4206,10 +4632,16 @@ function orderItemRowHTML(item={}){
           step="1"
           value="${quantity}"
           oninput="orderCalc()">
+
       </div>
 
+
       <div class="tm-oc-cost-wrap">
-        <span class="tm-oc-cost-symbol">$</span>
+
+        <span class="tm-oc-cost-symbol">
+          $
+        </span>
+
         <input
           class="oc-item-cost"
           type="number"
@@ -4217,15 +4649,21 @@ function orderItemRowHTML(item={}){
           step=".01"
           value="${unitCost.toFixed(2)}"
           oninput="orderCalc()">
+
       </div>
 
+
       <div class="tm-oc-item-total">
+
         <span class="oc-item-total">
           ${money(quantity*unitCost)}
         </span>
+
       </div>
 
-      <div>
+
+      <div class="tm-oc-remove-wrap">
+
         <button
           type="button"
           class="tm-oc-item-remove"
@@ -4233,6 +4671,7 @@ function orderItemRowHTML(item={}){
           onclick="removeOrderItem(this)">
           ×
         </button>
+
       </div>
 
     </div>
