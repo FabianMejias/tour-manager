@@ -748,31 +748,26 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
         const tour = tourResult.rows[0];
 
-        // Buscar tarifa vigente según TOUR + FECHA DEL SERVICIO.
-        const rateResult = await client.query(`
-          SELECT cost
-          FROM tour_rates
-          WHERE tour_id=$1
-            AND active=TRUE
-            AND $2::date BETWEEN valid_from AND valid_to
-          ORDER BY valid_from DESC
-          LIMIT 1
-        `, [
-          rawItem.tourId,
-          d.serviceDate
-        ]);
+        // ====================================================
+        // COSTO DE LA LINEA DEFINIDO POR LA OC
+        // ====================================================
+        //
+        // La tarifa vigente se utiliza en el frontend para
+        // proponer automáticamente el costo al seleccionar
+        // TOUR + FECHA DE SERVICIO.
+        //
+        // Al guardar una edición, el valor recibido en
+        // rawItem.unitCost es autoritativo. Esto permite que
+        // un usuario autorizado ajuste manualmente el costo
+        // sin que el backend vuelva a sustituirlo por la
+        // tarifa estándar del tour.
+        //
+        // El costo realmente acordado queda persistido en
+        // purchase_order_items.unit_cost y será el utilizado
+        // por reportes, análisis y márgenes.
+        // ====================================================
 
-        let unitCost;
-
-        if (rateResult.rows.length) {
-          unitCost = Number(rateResult.rows[0].cost || 0);
-        } else {
-          unitCost = Number(
-            rawItem.unitCost ??
-            tour.cost ??
-            0
-          );
-        }
+        const unitCost = Number(rawItem.unitCost);
 
         if (!Number.isFinite(unitCost) || unitCost < 0) {
           await client.query('ROLLBACK');
