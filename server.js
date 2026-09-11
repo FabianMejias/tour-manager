@@ -579,63 +579,6 @@ app.put('/api/purchase-orders/:id', async (req, res) => {
 
 
 // ============================================================
-// ESTADO Y CANCELACION DE OCs
-// Migración aditiva: no elimina ni modifica OCs existentes.
-// Las OCs históricas con status NULL se interpretan como activas.
-// ============================================================
-
-(async () => {
-  try {
-
-    await pool.query(`
-      ALTER TABLE purchase_orders
-      ADD COLUMN IF NOT EXISTS status TEXT
-    `);
-
-    await pool.query(`
-      ALTER TABLE purchase_orders
-      ADD COLUMN IF NOT EXISTS cancellation_reason TEXT
-    `);
-
-    await pool.query(`
-      ALTER TABLE purchase_orders
-      ADD COLUMN IF NOT EXISTS cancellation_notes TEXT
-    `);
-
-    await pool.query(`
-      ALTER TABLE purchase_orders
-      ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ
-    `);
-
-    await pool.query(`
-      ALTER TABLE purchase_orders
-      ADD COLUMN IF NOT EXISTS cancelled_by_user_id UUID
-    `);
-
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_purchase_orders_status
-      ON purchase_orders(status)
-    `);
-
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_purchase_orders_cancelled_by
-      ON purchase_orders(cancelled_by_user_id)
-    `);
-
-    console.log('OK: estado y cancelación de OCs disponible.');
-
-  } catch (e) {
-
-    console.error(
-      'ERROR creando estado y cancelación de OCs:',
-      e.message
-    );
-
-  }
-})();
-
-
-// ============================================================
 // CANCELAR ORDEN DE COMPRA
 // Conserva la OC para historial y auditoría.
 // ============================================================
@@ -901,6 +844,64 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
+
+
+// ============================================================
+// ESTADO Y CANCELACION DE OCs
+// Migración aditiva: no elimina ni modifica OCs existentes.
+// Las OCs históricas con status NULL se interpretan como activas.
+// ============================================================
+
+(async () => {
+  try {
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS status TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancellation_reason TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancellation_notes TEXT
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ
+    `);
+
+    await pool.query(`
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS cancelled_by_user_id UUID
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_orders_status
+      ON purchase_orders(status)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_purchase_orders_cancelled_by
+      ON purchase_orders(cancelled_by_user_id)
+    `);
+
+    console.log('OK: estado y cancelación de OCs disponible.');
+
+  } catch (e) {
+
+    console.error(
+      'ERROR creando estado y cancelación de OCs:',
+      e.message
+    );
+
+  }
+})();
+
 
 
 // ============================================================
