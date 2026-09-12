@@ -6646,6 +6646,12 @@ function saleForm(orderId){
 
   const items=tmSaleSourceItems(o);
 
+  const serviceDateFormatted=
+    dateOnly(o.serviceDate)
+      .split('-')
+      .reverse()
+      .join('/');
+
   const itemRows=items.map((item,index)=>`
 
     <div
@@ -6654,48 +6660,27 @@ function saleForm(orderId){
       data-tour-id="${esc(item.tourId||'')}"
       data-description="${esc(item.description||'')}"
       data-quantity="${Number(item.quantity||0)}"
-      style="
-        display:grid;
-        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
-        gap:10px;
-        align-items:center;
-        padding:10px 0;
-        border-bottom:1px solid #edf1f4
-      "
     >
 
-      <div style="
-        min-width:0;
-        font-weight:700;
-        color:#1f2937
-      ">
-        ${esc(item.description||'Servicio')}
+      <div class="tm-sale-service">
+
+        <div class="tm-sale-service-icon">
+          ✦
+        </div>
+
+        <div class="tm-sale-service-text">
+          ${esc(item.description||'Servicio')}
+        </div>
+
       </div>
 
-      <div style="
-        text-align:center;
-        font-weight:700;
-        color:#475569;
-        font-variant-numeric:tabular-nums
-      ">
+      <div class="tm-sale-quantity">
         ${Number(item.quantity||0)}
       </div>
 
-      <div style="position:relative">
+      <div class="tm-sale-price-wrap">
 
-        <span style="
-          position:absolute;
-          left:11px;
-          top:0;
-          height:40px;
-          display:flex;
-          align-items:center;
-          color:#64748b;
-          font-size:12px;
-          font-weight:800;
-          pointer-events:none;
-          z-index:2
-        ">
+        <span class="tm-sale-dollar">
           $
         </span>
 
@@ -6706,27 +6691,11 @@ function saleForm(orderId){
           min="0"
           value="${Number(item.unitPrice||0).toFixed(2)}"
           oninput="saleCalc()"
-          style="
-            width:100%;
-            box-sizing:border-box;
-            padding-left:25px;
-            padding-right:10px;
-            text-align:right;
-            font-variant-numeric:tabular-nums
-          "
         >
 
       </div>
 
-      <div
-        class="tm-sale-item-total"
-        style="
-          text-align:right;
-          font-weight:800;
-          color:#0f766e;
-          font-variant-numeric:tabular-nums
-        "
-      >
+      <div class="tm-sale-item-total">
         ${money(
           Number(item.quantity||0) *
           Number(item.unitPrice||0)
@@ -6737,15 +6706,323 @@ function saleForm(orderId){
 
   `).join('');
 
+
   modal(
     'Generar factura desde '+o.number,
     `
 
     <style>
+
+      .tm-sale-ui{
+        --tm-green:#0f766e;
+        --tm-green-dark:#115e59;
+        --tm-green-soft:#ecfdf5;
+        --tm-navy:#0f172a;
+        --tm-text:#334155;
+        --tm-muted:#64748b;
+        --tm-line:#e2e8f0;
+        --tm-soft:#f8fafc;
+        --tm-white:#ffffff;
+        color:var(--tm-navy);
+        padding:2px 2px 0;
+      }
+
+
+      .tm-sale-hero{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:20px;
+        margin-bottom:22px;
+      }
+
+
+      .tm-sale-hero-copy{
+        min-width:0;
+      }
+
+
+      .tm-sale-kicker{
+        display:inline-flex;
+        align-items:center;
+        gap:7px;
+        min-height:29px;
+        padding:0 11px;
+        border-radius:999px;
+        background:var(--tm-green-soft);
+        color:var(--tm-green-dark);
+        font-size:11px;
+        font-weight:800;
+        letter-spacing:.055em;
+        text-transform:uppercase;
+        margin-bottom:10px;
+      }
+
+
+      .tm-sale-kicker-dot{
+        width:7px;
+        height:7px;
+        border-radius:50%;
+        background:#10b981;
+        box-shadow:0 0 0 4px rgba(16,185,129,.12);
+      }
+
+
+      .tm-sale-intro{
+        font-size:14px;
+        line-height:1.5;
+        color:var(--tm-muted);
+      }
+
+
+      .tm-sale-order-badge{
+        flex:0 0 auto;
+        padding:10px 14px;
+        border:1px solid #cbd5e1;
+        border-radius:12px;
+        background:#fff;
+        box-shadow:0 2px 8px rgba(15,23,42,.04);
+        text-align:right;
+      }
+
+
+      .tm-sale-order-badge small{
+        display:block;
+        color:var(--tm-muted);
+        font-size:10px;
+        font-weight:800;
+        letter-spacing:.07em;
+        text-transform:uppercase;
+        margin-bottom:2px;
+      }
+
+
+      .tm-sale-order-badge strong{
+        display:block;
+        font-size:15px;
+        color:var(--tm-navy);
+        font-variant-numeric:tabular-nums;
+      }
+
+
+      .tm-sale-info-grid{
+        display:grid;
+        grid-template-columns:minmax(0,1fr) minmax(220px,.5fr);
+        gap:14px;
+        margin-bottom:18px;
+      }
+
+
+      .tm-sale-info-card{
+        display:flex;
+        align-items:center;
+        gap:13px;
+        min-height:74px;
+        box-sizing:border-box;
+        padding:14px 16px;
+        border:1px solid var(--tm-line);
+        border-radius:14px;
+        background:#fff;
+        box-shadow:0 2px 8px rgba(15,23,42,.025);
+      }
+
+
+      .tm-sale-info-icon{
+        width:38px;
+        height:38px;
+        flex:0 0 38px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border-radius:11px;
+        background:var(--tm-soft);
+        border:1px solid #eef2f7;
+        color:var(--tm-green);
+        font-size:17px;
+        font-weight:800;
+      }
+
+
+      .tm-sale-info-label{
+        display:block;
+        font-size:10px;
+        line-height:1.2;
+        color:var(--tm-muted);
+        font-weight:800;
+        letter-spacing:.065em;
+        text-transform:uppercase;
+        margin-bottom:5px;
+      }
+
+
+      .tm-sale-info-value{
+        color:var(--tm-navy);
+        font-size:14px;
+        font-weight:750;
+        line-height:1.35;
+        overflow-wrap:anywhere;
+      }
+
+
+      .tm-sale-items-card{
+        margin-top:4px;
+        overflow:hidden;
+        border:1px solid var(--tm-line);
+        border-radius:16px;
+        background:#fff;
+        box-shadow:0 4px 16px rgba(15,23,42,.035);
+      }
+
+
+      .tm-sale-items-title{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:15px;
+        padding:15px 18px 13px;
+        border-bottom:1px solid var(--tm-line);
+      }
+
+
+      .tm-sale-items-title strong{
+        font-size:14px;
+        color:var(--tm-navy);
+      }
+
+
+      .tm-sale-items-title span{
+        font-size:11px;
+        color:var(--tm-muted);
+      }
+
+
+      .tm-sale-items-head{
+        display:grid;
+        grid-template-columns:minmax(250px,1fr) 85px 150px 125px;
+        gap:14px;
+        align-items:center;
+        padding:10px 18px;
+        background:var(--tm-soft);
+        border-bottom:1px solid var(--tm-line);
+        color:var(--tm-muted);
+        font-size:10px;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.055em;
+      }
+
+
+      .tm-sale-item-row{
+        display:grid !important;
+        grid-template-columns:minmax(250px,1fr) 85px 150px 125px !important;
+        gap:14px !important;
+        align-items:center !important;
+        min-height:70px;
+        padding:11px 18px !important;
+        box-sizing:border-box;
+        border-bottom:1px solid #eef2f7 !important;
+        background:#fff;
+      }
+
+
+      .tm-sale-item-row:last-child{
+        border-bottom:0 !important;
+      }
+
+
+      .tm-sale-service{
+        min-width:0;
+        display:flex;
+        align-items:center;
+        gap:11px;
+      }
+
+
+      .tm-sale-service-icon{
+        width:34px;
+        height:34px;
+        flex:0 0 34px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border-radius:10px;
+        background:var(--tm-green-soft);
+        color:var(--tm-green);
+        font-size:14px;
+      }
+
+
+      .tm-sale-service-text{
+        min-width:0;
+        color:var(--tm-navy);
+        font-size:13px;
+        font-weight:700;
+        line-height:1.4;
+      }
+
+
+      .tm-sale-quantity{
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        width:42px;
+        height:34px;
+        margin:auto;
+        border:1px solid var(--tm-line);
+        border-radius:9px;
+        background:var(--tm-soft);
+        color:#475569;
+        font-size:13px;
+        font-weight:800;
+        font-variant-numeric:tabular-nums;
+      }
+
+
+      .tm-sale-price-wrap{
+        position:relative;
+      }
+
+
+      .tm-sale-dollar{
+        position:absolute;
+        left:12px;
+        top:0;
+        height:40px;
+        display:flex;
+        align-items:center;
+        color:#64748b;
+        font-size:12px;
+        font-weight:800;
+        pointer-events:none;
+        z-index:2;
+      }
+
+
       .tm-sale-item-price{
+        width:100%;
+        height:40px;
+        box-sizing:border-box;
+        padding:0 11px 0 26px !important;
+        border:1px solid #cbd5e1 !important;
+        border-radius:9px !important;
+        background:#fff !important;
+        color:var(--tm-navy);
+        text-align:right;
+        font-size:13px;
+        font-weight:700;
+        font-variant-numeric:tabular-nums;
         appearance:textfield;
         -moz-appearance:textfield;
+        transition:border-color .15s ease,box-shadow .15s ease;
       }
+
+
+      .tm-sale-item-price:focus{
+        outline:none;
+        border-color:#5eead4 !important;
+        box-shadow:0 0 0 3px rgba(20,184,166,.12);
+      }
+
 
       .tm-sale-item-price::-webkit-inner-spin-button,
       .tm-sale-item-price::-webkit-outer-spin-button{
@@ -6753,222 +7030,473 @@ function saleForm(orderId){
         margin:0;
       }
 
-      @media(max-width:760px){
-        .tm-sale-item-row{
-          grid-template-columns:1fr 65px 115px 95px !important;
-        }
+
+      .tm-sale-item-total{
+        text-align:right !important;
+        color:var(--tm-green) !important;
+        font-size:14px;
+        font-weight:850 !important;
+        font-variant-numeric:tabular-nums;
       }
-    </style>
-
-    <div style="margin-bottom:18px">
-
-      <div style="
-        font-size:13px;
-        color:#64748b;
-        margin-bottom:4px
-      ">
-        Complete los precios de venta de esta operación
-      </div>
-
-    </div>
 
 
-    <div class="grid" style="gap:14px">
-
-      <div class="field">
-
-        <label>Cliente</label>
-
-        <input
-          disabled
-          value="${esc(o.customerName)}"
-          style="background:#f8fafc"
-        >
-
-      </div>
-
-
-      <div class="field">
-
-        <label>Fecha de servicio</label>
-
-        <input
-          disabled
-          value="${
-            dateOnly(o.serviceDate)
-              .split('-')
-              .reverse()
-              .join('/')
-          }"
-          style="background:#f8fafc"
-        >
-
-      </div>
-
-    </div>
-
-
-    <div class="card" style="
-      margin-top:18px;
-      padding:16px 18px;
-      border:1px solid #e5eaf0;
-      border-radius:14px
-    ">
-
-      <div style="
+      .tm-sale-options{
         display:grid;
-        grid-template-columns:minmax(220px,1fr) 90px 150px 120px;
-        gap:10px;
-        padding:0 0 8px;
-        border-bottom:1px solid #dce3ea;
-        color:#64748b;
+        grid-template-columns:1fr 1fr 1fr;
+        gap:14px;
+        margin-top:18px;
+      }
+
+
+      .tm-sale-control-card{
+        padding:14px;
+        border:1px solid var(--tm-line);
+        border-radius:14px;
+        background:#fff;
+        box-sizing:border-box;
+      }
+
+
+      .tm-sale-control-card > label:first-child{
+        display:block;
+        margin:0 0 8px;
+        color:#475569;
         font-size:11px;
         font-weight:800;
+        letter-spacing:.03em;
+      }
+
+
+      .tm-sale-control-card input[type="number"],
+      .tm-sale-control-card select{
+        width:100%;
+        height:42px;
+        box-sizing:border-box;
+        margin:0;
+        border:1px solid #cbd5e1;
+        border-radius:9px;
+        background:#fff;
+        color:var(--tm-navy);
+        font-size:13px;
+        font-weight:650;
+      }
+
+
+      .tm-sale-tax-box{
+        min-height:42px;
+        display:flex;
+        align-items:center;
+        gap:10px;
+        box-sizing:border-box;
+        padding:0 12px;
+        margin:0;
+        border:1px solid #cbd5e1;
+        border-radius:9px;
+        background:var(--tm-soft);
+        cursor:pointer;
+      }
+
+
+      .tm-sale-tax-box input{
+        width:17px;
+        height:17px;
+        flex:0 0 auto;
+        margin:0;
+        accent-color:var(--tm-green);
+      }
+
+
+      .tm-sale-tax-box span{
+        color:#334155;
+        font-size:13px;
+        font-weight:700;
+      }
+
+
+      .tm-sale-summary{
+        display:grid;
+        grid-template-columns:repeat(3,minmax(0,1fr)) minmax(170px,1.15fr);
+        overflow:hidden;
+        margin-top:18px;
+        border:1px solid #dbe5e3;
+        border-radius:16px;
+        background:#fff;
+        box-shadow:0 4px 18px rgba(15,118,110,.06);
+      }
+
+
+      .tm-sale-summary-item{
+        padding:17px 18px;
+        border-right:1px solid #edf1f4;
+      }
+
+
+      .tm-sale-summary-label{
+        display:block;
+        color:var(--tm-muted);
+        font-size:10px;
+        font-weight:800;
         text-transform:uppercase;
-        letter-spacing:.04em
-      ">
+        letter-spacing:.055em;
+        margin-bottom:5px;
+      }
 
-        <div>Servicio / Tour</div>
 
-        <div style="text-align:center">
-          Cantidad
+      .tm-sale-summary-value{
+        color:var(--tm-navy);
+        font-size:18px;
+        font-weight:800;
+        font-variant-numeric:tabular-nums;
+      }
+
+
+      .tm-sale-summary-total{
+        padding:17px 20px;
+        background:linear-gradient(135deg,#f0fdfa,#ecfdf5);
+      }
+
+
+      .tm-sale-summary-total .tm-sale-summary-label{
+        color:var(--tm-green-dark);
+      }
+
+
+      .tm-sale-summary-total #saleTotal{
+        color:var(--tm-green-dark);
+        font-size:27px;
+        line-height:1.15;
+        font-weight:900;
+        font-variant-numeric:tabular-nums;
+      }
+
+
+      .tm-sale-actions{
+        display:flex;
+        justify-content:flex-end;
+        gap:10px;
+        margin-top:20px;
+        padding-top:18px;
+        border-top:1px solid #eef2f7;
+      }
+
+
+      .tm-sale-actions button{
+        min-height:42px;
+        padding:0 18px;
+        border-radius:10px;
+        font-size:13px;
+        font-weight:800;
+        cursor:pointer;
+        transition:transform .12s ease,box-shadow .12s ease;
+      }
+
+
+      .tm-sale-actions button:hover{
+        transform:translateY(-1px);
+      }
+
+
+      .tm-sale-cancel{
+        border:1px solid #cbd5e1;
+        background:#fff;
+        color:#475569;
+      }
+
+
+      .tm-sale-submit{
+        min-width:150px;
+        border:1px solid var(--tm-green) !important;
+        background:var(--tm-green) !important;
+        color:#fff !important;
+        box-shadow:0 5px 13px rgba(15,118,110,.18);
+      }
+
+
+      .tm-sale-submit:hover{
+        background:var(--tm-green-dark) !important;
+      }
+
+
+      @media(max-width:850px){
+
+        .tm-sale-items-card{
+          overflow-x:auto;
+        }
+
+        .tm-sale-items-head,
+        .tm-sale-item-row{
+          min-width:700px;
+        }
+
+        .tm-sale-options{
+          grid-template-columns:1fr 1fr;
+        }
+
+        .tm-sale-summary{
+          grid-template-columns:repeat(2,minmax(0,1fr));
+        }
+
+        .tm-sale-summary-total{
+          grid-column:span 1;
+        }
+
+      }
+
+
+      @media(max-width:620px){
+
+        .tm-sale-hero{
+          flex-direction:column;
+        }
+
+        .tm-sale-order-badge{
+          width:100%;
+          box-sizing:border-box;
+          text-align:left;
+        }
+
+        .tm-sale-info-grid,
+        .tm-sale-options{
+          grid-template-columns:1fr;
+        }
+
+        .tm-sale-summary{
+          grid-template-columns:1fr 1fr;
+        }
+
+        .tm-sale-summary-item{
+          border-bottom:1px solid #edf1f4;
+        }
+
+        .tm-sale-summary-total{
+          grid-column:1 / -1;
+        }
+
+        .tm-sale-actions{
+          display:grid;
+          grid-template-columns:1fr 1fr;
+        }
+
+        .tm-sale-actions button{
+          width:100%;
+        }
+
+      }
+
+    </style>
+
+
+    <div class="tm-sale-ui">
+
+
+      <div class="tm-sale-hero">
+
+        <div class="tm-sale-hero-copy">
+
+          <div class="tm-sale-kicker">
+            <span class="tm-sale-kicker-dot"></span>
+            Nueva factura
+          </div>
+
+          <div class="tm-sale-intro">
+            Revise los datos de la orden y complete los precios de venta antes de generar la factura.
+          </div>
+
         </div>
 
-        <div style="text-align:right">
-          Precio venta
-        </div>
 
-        <div style="text-align:right">
-          Total
+        <div class="tm-sale-order-badge">
+
+          <small>Orden de compra</small>
+
+          <strong>
+            ${esc(o.number||'')}
+          </strong>
+
         </div>
 
       </div>
 
-      ${itemRows}
 
-    </div>
+      <div class="tm-sale-info-grid">
 
 
-    <div class="grid" style="
-      gap:14px;
-      margin-top:18px
-    ">
+        <div class="tm-sale-info-card">
 
-      <div class="field">
+          <div class="tm-sale-info-icon">
+            C
+          </div>
 
-        <label>Descuento %</label>
+          <div>
 
-        <input
-          id="saleDiscount"
-          type="number"
-          step=".01"
-          min="0"
-          value="0"
-          oninput="saleCalc()"
-        >
+            <span class="tm-sale-info-label">
+              Cliente
+            </span>
+
+            <div class="tm-sale-info-value">
+              ${esc(o.customerName||'—')}
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="tm-sale-info-card">
+
+          <div class="tm-sale-info-icon">
+            F
+          </div>
+
+          <div>
+
+            <span class="tm-sale-info-label">
+              Fecha de servicio
+            </span>
+
+            <div class="tm-sale-info-value">
+              ${serviceDateFormatted}
+            </div>
+
+          </div>
+
+        </div>
+
 
       </div>
 
 
-      <div class="field">
+      <div class="tm-sale-items-card">
 
-        <label>Medio de pago *</label>
+        <div class="tm-sale-items-title">
 
-        <select id="salePaymentMethod">
+          <strong>
+            Detalle de servicios
+          </strong>
 
-          <option value="">
-            Seleccione...
-          </option>
-
-          <option value="Cash">
-            Cash
-          </option>
-
-          <option value="Compra Click">
-            Compra Click
-          </option>
-
-          <option value="Tarjeta">
-            Tarjeta
-          </option>
-
-        </select>
-
-      </div>
-
-
-      <div class="field">
-
-        <label>Impuestos</label>
-
-        <label style="
-          min-height:46px;
-          display:flex;
-          align-items:center;
-          gap:10px;
-          padding:0 14px;
-          border:1px solid #dce3ea;
-          border-radius:10px;
-          background:#f8fafc;
-          cursor:pointer;
-          margin:0;
-          box-sizing:border-box
-        ">
-
-          <input
-            id="saleTaxApply"
-            type="checkbox"
-            checked
-            onchange="saleCalc()"
-            style="
-              width:17px;
-              height:17px;
-              margin:0;
-              flex:0 0 auto
-            "
-          >
-
-          <span style="
-            font-weight:600;
-            color:#334155
-          ">
-            Aplicar IVA 13%
+          <span>
+            Precio de venta editable
           </span>
 
-        </label>
+        </div>
+
+
+        <div class="tm-sale-items-head">
+
+          <div>
+            Servicio / Tour
+          </div>
+
+          <div style="text-align:center">
+            Cantidad
+          </div>
+
+          <div style="text-align:right">
+            Precio venta
+          </div>
+
+          <div style="text-align:right">
+            Total
+          </div>
+
+        </div>
+
+
+        ${itemRows}
+
 
       </div>
 
-    </div>
+
+      <div class="tm-sale-options">
 
 
-    <div class="card" style="
-      margin-top:18px;
-      padding:18px 20px;
-      background:#f8fafc;
-      border:1px solid #e5eaf0;
-      border-radius:14px
-    ">
+        <div class="tm-sale-control-card">
 
-      <div style="
-        display:grid;
-        grid-template-columns:repeat(4,minmax(0,1fr));
-        gap:18px
-      ">
+          <label>
+            DESCUENTO %
+          </label>
 
-        <div>
+          <input
+            id="saleDiscount"
+            type="number"
+            step=".01"
+            min="0"
+            value="0"
+            oninput="saleCalc()"
+          >
 
-          <small style="color:#64748b">
+        </div>
+
+
+        <div class="tm-sale-control-card">
+
+          <label>
+            MEDIO DE PAGO *
+          </label>
+
+          <select id="salePaymentMethod">
+
+            <option value="">
+              Seleccione...
+            </option>
+
+            <option value="Cash">
+              Cash
+            </option>
+
+            <option value="Compra Click">
+              Compra Click
+            </option>
+
+            <option value="Tarjeta">
+              Tarjeta
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="tm-sale-control-card">
+
+          <label>
+            IMPUESTOS
+          </label>
+
+          <label class="tm-sale-tax-box">
+
+            <input
+              id="saleTaxApply"
+              type="checkbox"
+              checked
+              onchange="saleCalc()"
+            >
+
+            <span>
+              Aplicar IVA 13%
+            </span>
+
+          </label>
+
+        </div>
+
+
+      </div>
+
+
+      <div class="tm-sale-summary">
+
+
+        <div class="tm-sale-summary-item">
+
+          <span class="tm-sale-summary-label">
             Subtotal
-          </small>
+          </span>
 
           <div
             id="saleSub"
-            style="
-              font-size:19px;
-              font-weight:700;
-              margin-top:4px
-            "
+            class="tm-sale-summary-value"
           >
             $0.00
           </div>
@@ -6976,19 +7504,15 @@ function saleForm(orderId){
         </div>
 
 
-        <div>
+        <div class="tm-sale-summary-item">
 
-          <small style="color:#64748b">
+          <span class="tm-sale-summary-label">
             Descuento
-          </small>
+          </span>
 
           <div
             id="saleDiscountAmount"
-            style="
-              font-size:19px;
-              font-weight:700;
-              margin-top:4px
-            "
+            class="tm-sale-summary-value"
           >
             $0.00
           </div>
@@ -6996,19 +7520,15 @@ function saleForm(orderId){
         </div>
 
 
-        <div>
+        <div class="tm-sale-summary-item">
 
-          <small style="color:#64748b">
+          <span class="tm-sale-summary-label">
             IVA 13%
-          </small>
+          </span>
 
           <div
             id="saleTax"
-            style="
-              font-size:19px;
-              font-weight:700;
-              margin-top:4px
-            "
+            class="tm-sale-summary-value"
           >
             $0.00
           </div>
@@ -7016,60 +7536,52 @@ function saleForm(orderId){
         </div>
 
 
-        <div style="
-          padding-left:18px;
-          border-left:1px solid #dce3ea
-        ">
+        <div class="tm-sale-summary-total">
 
-          <small style="
-            color:#64748b;
-            font-weight:700
-          ">
-            TOTAL
-          </small>
+          <span class="tm-sale-summary-label">
+            Total a facturar
+          </span>
 
-          <div
-            id="saleTotal"
-            style="
-              font-size:26px;
-              font-weight:800;
-              margin-top:2px
-            "
-          >
+          <div id="saleTotal">
             $0.00
           </div>
 
         </div>
+
 
       </div>
 
-    </div>
 
+      <div class="tm-sale-actions">
 
-    <div class="actions" style="margin-top:18px">
+        <button
+          type="button"
+          class="tm-sale-cancel"
+          onclick="closeModal()"
+        >
+          Cancelar
+        </button>
 
-      <button
-        class="secondary"
-        onclick="closeModal()"
-      >
-        Cancelar
-      </button>
+        <button
+          type="button"
+          class="tm-sale-submit"
+          onclick="createSale('${orderId}')"
+        >
+          Generar factura
+        </button>
 
-      <button
-        class="primary"
-        onclick="createSale('${orderId}')"
-      >
-        Generar factura
-      </button>
+      </div>
+
 
     </div>
 
     `
+
   );
 
   saleCalc();
-}
 
+}
 
 function saleCalc(){
 
