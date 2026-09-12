@@ -4852,15 +4852,13 @@ async function orderItemCostFromTour(el){
       if(info){
         info.innerHTML=
           '<span style="color:#b45309;font-weight:700">' +
-          '⚠ Sin tarifa configurada</span>';
+          '⚠ Sin tarifa configurada — ingrese costo manual</span>';
       }
 
-      if(!costInput.value){
-        costInput.value=
-          Number(
-            t?.cost||0
-          ).toFixed(2);
-      }
+      // Para una fecha sin tarifa válida no reutilizamos
+      // automáticamente el costo legado del tour.
+      // El usuario puede ingresar un costo manual.
+      costInput.value='';
     }
 
   }catch(e){

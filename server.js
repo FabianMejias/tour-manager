@@ -2318,8 +2318,6 @@ async function replaceState(client, db) {
         VALUES($1,$2,$3,$4,$5,TRUE)
         ON CONFLICT(id) DO UPDATE SET
           name=EXCLUDED.name,
-          hotel_price=EXCLUDED.hotel_price,
-          cost=EXCLUDED.cost,
           currency=EXCLUDED.currency
       `,[x.id,x.name,Number(x.hotel||0),Number(x.cost||0),x.currency||'USD']);
     }
