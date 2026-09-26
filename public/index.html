@@ -5647,12 +5647,16 @@ function payments(){
 
  return `<div class="toolbar">
    <div>
-     <h2>Pagos a proveedores</h2>
-     <small>Cuentas por pagar según la fecha en que se recibió el servicio.</small>
+     <h2>Cuentas por pagar</h2>
+     <small>Corte flexible por fecha de servicio, pagos anticipados e historial de comprobantes.</small>
    </div>
  </div>
+ <div class="actions" style="margin:12px 0 18px">
+   <button id="payTabPending" onclick="payTab('pending')">Pendientes y corte</button>
+   <button id="payTabHistory" onclick="payTab('history')">Historial y comprobantes</button>
+ </div>
 
- <div class="card">
+ <div class="card" id="payPendingPanel">
 
    <div class="filters">
 
@@ -5662,7 +5666,7 @@ function payments(){
      </div>
 
      <div class="field">
-       <label>Fecha de servicio hasta</label>
+       <label>Fecha de corte / servicio hasta</label>
        <input id="payDateTo" type="date" onchange="renderPayments()">
      </div>
 
@@ -5706,7 +5710,7 @@ function payments(){
 
  </div>
 
- <div class="card">
+ <div class="card" id="payHistoryPanel">
 
    <h3>Historial de pagos</h3>
 
@@ -5740,7 +5744,16 @@ function payments(){
 }
 
 
+let paymentTab='pending';
+function payTab(tab){
+ paymentTab=tab;
+ $('payPendingPanel').style.display=tab==='pending'?'':'none';
+ $('payHistoryPanel').style.display=tab==='history'?'':'none';
+ $('payTabPending').classList.toggle('primary',tab==='pending');
+ $('payTabHistory').classList.toggle('primary',tab==='history');
+}
 function renderPayments(){
+ payTab(paymentTab);
 
  const sf=$('paySupplier')?.value||'';
  const q=($('paySearch')?.value||'').trim().toLowerCase();
@@ -5774,7 +5787,7 @@ function renderPayments(){
      .filter(o=>{
 
        // Solo pendientes
-       if(o.paymentStatus==='Pagado')return false;
+       if(o.paymentStatus==='Pagado'||o.status==='cancelled')return false;
 
        // Filtro proveedor
        if(sf && o.supplierId!==sf)return false;
@@ -6099,11 +6112,9 @@ function renderPayments(){
 
                <td>
 
-                 <button
-                   class="secondary"
-                   onclick="previewOrder('${o.id}')">
-                   Ver OC
-                 </button>
+                 <button class="secondary" onclick="previewOrder('${o.id}')">Ver OC</button>
+                 ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:''}
+                 ${dateOnly(o.serviceDate)>localDate()?'<small>Servicio futuro · prepago</small>':''}
 
                </td>
 
@@ -6267,22 +6278,28 @@ function payOpenForm(){
  const total=os.reduce((a,o)=>a+Number(o.total||0),0);
  pendingPaymentOrderIds=os.map(o=>o.id);
  modal('Registrar pago',`<div class="notice"><b>${os.length}</b> OC(s) · Proveedor: <b>${esc(supplier(ss[0]))}</b> · Total: <b>${money(total)}</b></div>
- <div class="grid"><div class="field"><label>Fecha de pago *</label><input id="paymentDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Número de comprobante *</label><input id="paymentReceipt" placeholder="TRX-12345"></div></div>
+ <div class="grid"><div class="field"><label>Fecha de pago *</label><input id="paymentDate" type="date" value="${localDate()}"></div><div class="field"><label>Número de comprobante *</label><input id="paymentReceipt" placeholder="TRX-12345"></div></div>
+ <div class="field"><label><input type="checkbox" id="paymentPrepayment" ${os.some(o=>dateOnly(o.serviceDate)>localDate())?'checked':''}> Prepago (servicios futuros)</label></div>
+ <div class="field"><label>Notas opcionales</label><input id="paymentNotes" maxlength="2000"></div>
  <div class="actions"><button id="cancelPayment" class="secondary">Cancelar</button><button id="applyPaymentBtn" class="primary">Aplicar pago</button></div>`);
  $('cancelPayment').addEventListener('click',closeModal);
  $('applyPaymentBtn').addEventListener('click',applyPayment);
 }
-function applyPayment(){
+async function applyPayment(){
  const ids=[...pendingPaymentOrderIds];
- if(!ids.length)return alert('No hay OCs seleccionadas para este pago.');
- const date=$('paymentDate').value,receipt=$('paymentReceipt').value.trim();if(!date||!receipt)return alert('Complete fecha y número de comprobante.');
- const os=ids.map(i=>db.orders.find(o=>o.id===i)).filter(Boolean),ss=[...new Set(os.map(o=>o.supplierId))];
- if(!os.length||ss.length!==1)return alert('Selección de pago inválida.');
- if(os.some(o=>o.paymentStatus==='Pagado'))return alert('Una OC seleccionada ya está pagada. Actualice la pantalla.');
- const p={id:uid(),number:next('P'),supplierId:ss[0],date,receipt,total:os.reduce((a,o)=>a+Number(o.total||0),0),orderIds:os.map(o=>o.id)};
- db.payments.push(p);os.forEach(o=>{o.paymentStatus='Pagado';o.paymentDate=date;o.paymentReceipt=receipt;o.paymentId=p.id});
- pendingPaymentOrderIds=[];
- saveDB();closeModal();alert('Pago '+p.number+' aplicado correctamente.');
+ const date=$('paymentDate').value, receipt=$('paymentReceipt').value.trim();
+ if(!ids.length||!date||!receipt)return alert('Complete fecha, comprobante y OC.');
+ const btn=$('applyPaymentBtn');btn.disabled=true;
+ try {
+   const r=await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+     orderIds:ids,date,receipt,prepayment:$('paymentPrepayment').checked,notes:$('paymentNotes').value.trim()
+   })});
+   const result=await r.json();
+   if(!r.ok)throw new Error(result.error||'No fue posible registrar el pago.');
+   pendingPaymentOrderIds=[];
+   db=await loadDB();closeModal();render();
+   previewPayment(result.id);
+ }catch(e){alert(e.message);btn.disabled=false;}
 }
 function paymentDoc(p){
 
@@ -6299,7 +6316,9 @@ function paymentDoc(p){
         <b>Pago:</b> ${p.number}<br>
         <b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br>
         <b>Fecha:</b> ${p.date}<br>
-        <b>Comprobante:</b> ${esc(p.receipt)}
+        <b>Comprobante:</b> ${esc(p.receipt)}<br>
+        <b>Tipo:</b> ${p.prepayment?'Prepago':'Pago de servicios'}<br>
+        ${p.notes?`<b>Notas:</b> ${esc(p.notes)}`:''}
       </div>
 
       <hr>
