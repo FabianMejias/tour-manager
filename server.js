@@ -1337,6 +1337,71 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
 
+// La tabla de pagos histórica permanece intacta; la marca es aditiva.
+const accountsPayableReady = pool.query(`
+  ALTER TABLE payments ADD COLUMN IF NOT EXISTS is_prepayment BOOLEAN NOT NULL DEFAULT FALSE
+`);
+
+app.post('/api/payments', async (req, res) => {
+  if (!req.session.user) return res.status(401).json({error:'No autenticado.'});
+  if (!(await tmHasPermission(req, 'payments.create')))
+    return res.status(403).json({error:'No tiene permiso para registrar pagos.'});
+  const {orderIds, date, receipt, notes, prepayment} = req.body || {};
+  const ids = Array.isArray(orderIds) ? [...new Set(orderIds)] : [];
+  if (!ids.length || ids.length > 200 || ids.some(id => typeof id !== 'string') ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date || '') ||
+      !Number.isFinite(Date.parse(date)) || !String(receipt || '').trim() ||
+      String(receipt).length > 250 || String(notes || '').length > 2000)
+    return res.status(400).json({error:'Revise las OC, fecha y comprobante del pago.'});
+  const client = await pool.connect();
+  try {
+    await accountsPayableReady;
+    await client.query('BEGIN');
+    const found = await client.query(`
+      SELECT id, supplier_id, total, currency, service_date, payment_status,
+             COALESCE(status,'active') AS status
+      FROM purchase_orders WHERE id::text = ANY($1::text[]) ORDER BY id FOR UPDATE
+    `,[ids]);
+    const rows = found.rows;
+    const linked = await client.query(`SELECT purchase_order_id FROM payment_purchase_orders
+      WHERE purchase_order_id::text = ANY($1::text[])`,[ids]);
+    if (rows.length !== ids.length || linked.rows.length ||
+        rows.some(o => o.status !== 'active' || o.payment_status === 'Pagado') ||
+        new Set(rows.map(o => o.supplier_id)).size !== 1 ||
+        new Set(rows.map(o => o.currency || 'USD')).size !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({error:'Las OC cambiaron, están canceladas, pagadas o pertenecen a distintos proveedores o monedas. Actualice la pantalla.'});
+    }
+    const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Costa_Rica',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    if (!prepayment && rows.some(o => String(o.service_date).slice(0,10) > today)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({error:'Los servicios futuros requieren marcar el pago como prepago.'});
+    }
+    // Bloqueo transaccional del consecutivo, compatible con los pagos anteriores.
+    await client.query("INSERT INTO sequences(code,current_value) VALUES('P',0) ON CONFLICT(code) DO NOTHING");
+    const seq = await client.query("UPDATE sequences SET current_value=current_value+1 WHERE code='P' RETURNING current_value");
+    const number = 'P-' + String(seq.rows[0].current_value).padStart(6,'0');
+    const total = rows.reduce((sum,o) => sum + Math.round(Number(o.total)*100),0)/100;
+    if (!Number.isFinite(total) || total < 0) throw new Error('Total inválido');
+    const id = require('crypto').randomUUID();
+    await client.query(`INSERT INTO payments(id,number,supplier_id,payment_date,receipt_number,total,notes,is_prepayment)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id,number,rows[0].supplier_id,date,String(receipt).trim(),total,String(notes||'').trim()||null,!!prepayment]);
+    for (const o of rows) {
+      await client.query(`INSERT INTO payment_purchase_orders(payment_id,purchase_order_id,amount)
+        VALUES($1,$2,$3)`,[id,o.id,o.total]);
+    }
+    await client.query(`UPDATE purchase_orders SET payment_status='Pagado',payment_date=$1,payment_receipt=$2
+      WHERE id::text = ANY($3::text[])`,[date,String(receipt).trim(),ids]);
+    await client.query('COMMIT');
+    res.status(201).json({id,number,total});
+  } catch (e) {
+    await client.query('ROLLBACK').catch(()=>{});
+    console.error('Error registrando pago:',e);
+    res.status(500).json({error:'No fue posible registrar el pago.'});
+  } finally { client.release(); }
+});
+
 
 // ============================================================
 // ESTADO Y CANCELACION DE OCs
@@ -2141,7 +2206,7 @@ async function getState(client) {
     `),
     client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id,status,cancellation_reason,cancellation_notes,cancelled_at,cancelled_by_user_id FROM purchase_orders ORDER BY number DESC`),
     client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method FROM sales ORDER BY number DESC`),
-    client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes FROM payments ORDER BY number DESC`),
+    client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes,is_prepayment FROM payments ORDER BY number DESC`),
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
     client.query(`SELECT code,current_value FROM sequences`),
     client.query(`SELECT commercial_name,legal_name,legal_id,phone,whatsapp,email,address,default_tax_rate FROM company_settings WHERE id=1`),
@@ -2258,7 +2323,7 @@ async function getState(client) {
     })),
     orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||'',items:orderItemsByOrder[x.id]||[]})),
     sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||'',items:saleItemsBySale[x.id]||[]})),
-    payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
+    payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',prepayment:x.is_prepayment,orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
     seq: Object.fromEntries(sequences.rows.map(x=>[x.code,Number(x.current_value)])),
     company: settings.rows[0] ? {commercial:settings.rows[0].commercial_name,legal:settings.rows[0].legal_name,id:settings.rows[0].legal_id,phone:settings.rows[0].phone,whatsapp:settings.rows[0].whatsapp,email:settings.rows[0].email,address:settings.rows[0].address,tax:Number(settings.rows[0].default_tax_rate||13)} : null
@@ -2787,9 +2852,9 @@ async function replaceState(client, db) {
           total=EXCLUDED.total,
           currency=EXCLUDED.currency,
           notes=EXCLUDED.notes,
-          payment_status=EXCLUDED.payment_status,
-          payment_date=EXCLUDED.payment_date,
-          payment_receipt=EXCLUDED.payment_receipt,
+          payment_status=CASE WHEN purchase_orders.payment_status='Pagado' THEN 'Pagado' ELSE EXCLUDED.payment_status END,
+          payment_date=CASE WHEN purchase_orders.payment_status='Pagado' THEN purchase_orders.payment_date ELSE EXCLUDED.payment_date END,
+          payment_receipt=CASE WHEN purchase_orders.payment_status='Pagado' THEN purchase_orders.payment_receipt ELSE EXCLUDED.payment_receipt END,
           sale_id=EXCLUDED.sale_id
       `,[
         x.id,x.number,x.op,x.clientId,x.supplierId,x.sellerId,x.tourId,
@@ -2819,9 +2884,7 @@ async function replaceState(client, db) {
       `,[x.id,x.number,x.supplierId,x.date,x.receipt,Number(x.total||0),x.notes||null]);
     }
 
-    // Solo se reconstruyen las relaciones de pagos.
-    // Esto NO elimina OCs, pagos ni ningún dato operativo.
-    await client.query('DELETE FROM payment_purchase_orders');
+    // Nunca reconstruir vínculos: otra sesión podría haber pagado una OC.
 
     for (const p of (db.payments || [])) {
       for (const oid of (p.orderIds || [])) {
@@ -2829,7 +2892,8 @@ async function replaceState(client, db) {
         if(o) {
           await client.query(`
             INSERT INTO payment_purchase_orders(payment_id,purchase_order_id,amount)
-            VALUES($1,$2,$3)
+            SELECT $1,$2,$3 WHERE NOT EXISTS (
+              SELECT 1 FROM payment_purchase_orders WHERE payment_id=$1 AND purchase_order_id=$2)
           `,[p.id,oid,Number(o.total||0)]);
         }
       }
@@ -2880,7 +2944,7 @@ async function replaceState(client, db) {
 app.get('/api/state', async (req,res)=>{
   if(!req.session.user) return res.status(401).json({error:'No autenticado.'});
   const client=await pool.connect();
-  try { res.json(await getState(client)); }
+  try { await accountsPayableReady; res.json(await getState(client)); }
   catch(e){ console.error(e); res.status(500).json({error:'No se pudo leer la base de datos'}); }
   finally{client.release();}
 });
@@ -2897,6 +2961,7 @@ app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 async function startServer() {
   try {
     await purchaseOrderItemsReady;
+    await accountsPayableReady;
     await saleItemsReady;
 
     app.listen(port, () => {
