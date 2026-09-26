@@ -23,3 +23,11 @@ La ruta general de estado todavía acepta escrituras de módulos anteriores; con
 ## Verificación local
 
 `node --check server.js`, compilación de JavaScript del bloque principal del HTML mediante `new Function`, y `git diff --check`. No hubo conexión autorizada a la base de datos de producción ni se ejecutó una migración allí; las pruebas transaccionales descritas arriba deben ejecutarse con una base de prueba antes del despliegue.
+
+## Prueba aislada en Railway (25/09/2026)
+
+Se creó el entorno `cxp-staging`, conectado exclusivamente a la rama `cxp-staging`. La duplicación de Railway creó un Postgres vacío; se restauró una copia lógica de 19 tablas, sin alterar producción. El despliegue arrancó y se inició sesión en la aplicación aislada. Se crearon datos identificados como `PRUEBA CXP`.
+
+El corte al 25/09/2026 incluyó solo la OC del 24/09 ($113) y excluyó la del 01/10 ($226). La primera aplicación del pago detectó un defecto: `pg` devolvía `service_date` como `Date`, de modo que `String(date).slice(0,10)` no era ISO y clasificaba una OC pasada como futura. La consulta ahora convierte la fecha a texto ISO en PostgreSQL (`service_date::date::text`). Repetir los casos después del despliegue de esta corrección.
+
+Al crear el tour ficticio, la tarifa inicial automática falló en el módulo existente; el costo manual permitió crear las OC. Esto requiere revisión aparte y no prueba un fallo de pagos.

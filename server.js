@@ -1358,7 +1358,7 @@ app.post('/api/payments', async (req, res) => {
     await accountsPayableReady;
     await client.query('BEGIN');
     const found = await client.query(`
-      SELECT id, supplier_id, total, currency, service_date, payment_status,
+      SELECT id, supplier_id, total, currency, service_date::date::text AS service_date, payment_status,
              COALESCE(status,'active') AS status
       FROM purchase_orders WHERE id::text = ANY($1::text[]) ORDER BY id FOR UPDATE
     `,[ids]);
