@@ -11264,7 +11264,6 @@ async function saveTour(id){
 }
 
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
-init();
 </script>
 
 <section id="tm-users-admin" style="display:none;padding:24px;max-width:1250px;margin:auto;">
@@ -11398,13 +11397,13 @@ async function tmAuthInit(){
   try{
     const st=await req('/api/auth/status');
     if(st.authenticated){
-      const p=await req('/api/auth/permissions'); TM_AUTH={user:st.user,permissions:p.permissions}; hide(); VIEWS=BASE_VIEWS.slice(); render(); return;
+      const p=await req('/api/auth/permissions'); TM_AUTH={user:st.user,permissions:p.permissions}; hide(); VIEWS=BASE_VIEWS.slice(); await init(); return;
     }
     show(st.userCount===0);
     form.onsubmit=async e=>{e.preventDefault();document.getElementById('tm-auth-msg').textContent='';try{
       const setup=st.userCount===0; const body={email:document.getElementById('tm-auth-email').value,password:document.getElementById('tm-auth-password').value}; if(setup)body.name=document.getElementById('tm-auth-name').value;
       const d=await req(setup?'/api/auth/bootstrap':'/api/auth/login',{method:'POST',body:JSON.stringify(body)});
-      const p=await req('/api/auth/permissions');TM_AUTH={user:d.user,permissions:p.permissions};hide();render();
+      const p=await req('/api/auth/permissions');TM_AUTH={user:d.user,permissions:p.permissions};hide();await init();
     }catch(err){document.getElementById('tm-auth-msg').textContent=err.message;}};
   }catch(e){screen.style.display='flex';document.getElementById('tm-auth-msg').textContent='No fue posible conectar con el servidor.'}
 }
