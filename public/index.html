@@ -315,14 +315,18 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   justify-content:space-between;
   align-items:flex-end;
   gap:24px;
-  margin-bottom:22px;
+  margin-bottom:18px;
+  padding:25px 28px;
+  border-radius:18px;
+  background:linear-gradient(115deg,#102a43,#164e63);
+  box-shadow:0 12px 28px rgba(16,42,67,.12);
 }
 
 .tm-dash-eyebrow{
   font-size:12px;
   font-weight:800;
   letter-spacing:1.5px;
-  color:#12877f;
+  color:#8be2d6;
   margin-bottom:4px;
 }
 
@@ -330,12 +334,12 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   margin:0;
   font-size:32px;
   line-height:1.15;
-  color:#17212b;
+  color:#fff;
 }
 
 .tm-dash-header p{
   margin:7px 0 0;
-  color:#718096;
+  color:#cbdce5;
   font-size:15px;
 }
 
@@ -357,6 +361,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   color:#64748b;
   margin:0 0 6px;
 }
+.tm-dash-header .tm-period-wrap label{color:#d5e7ed}
 
 .tm-period-wrap select,
 .tm-dash-custom input{
@@ -375,15 +380,15 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   min-height:44px;
   padding:0 17px;
   border-radius:10px;
-  border:1px solid #168b83;
-  background:#fff;
-  color:#147b75;
+  border:1px solid #83bcb9;
+  background:transparent;
+  color:#fff;
   font-weight:700;
   cursor:pointer;
 }
 
 .tm-dash-refresh:hover{
-  background:#f0faf9;
+  background:rgba(255,255,255,.12);
 }
 
 .tm-dash-period{
@@ -413,7 +418,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 
 .tm-dash-card{
   position:relative;
-  min-height:145px;
+  min-height:150px;
   box-sizing:border-box;
   background:#fff;
   border:1px solid #e2e8ee;
@@ -435,10 +440,19 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   display:block;
   margin-top:14px;
   color:#17212b;
-  font-size:27px;
+  font-size:clamp(22px,2vw,29px);
   line-height:1.1;
   letter-spacing:-.4px;
 }
+.tm-dash-work{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:20px}
+.tm-dash-work-card{background:#fff;border:1px solid #e2e8ee;border-radius:16px;padding:20px 22px;box-shadow:0 2px 10px rgba(30,45,60,.035)}
+.tm-dash-work-card h3{font-size:17px;margin:0 0 5px;color:#17212b}
+.tm-dash-work-card p{font-size:13px;color:#64748b;margin:0 0 16px}
+.tm-dash-work-value{font-size:28px;font-weight:750;color:#17212b;letter-spacing:-.5px}
+.tm-dash-work-value small{font-size:13px;font-weight:500;color:#64748b;letter-spacing:0}
+.tm-dash-quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:17px}
+.tm-dash-quick button{border:1px solid #cde2e0;background:#f6fbfa;color:#0f766e;border-radius:9px;padding:9px 12px;font-weight:700}
+.tm-dash-quick button:hover{background:#e8f5f3}
 
 .tm-dash-card small{
   display:block;
@@ -623,6 +637,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   .tm-dash-header{
     align-items:stretch;
     flex-direction:column;
+    padding:20px;
   }
 
   .tm-dash-actions{
@@ -637,6 +652,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   .tm-dash-cards{
     grid-template-columns:1fr;
   }
+  .tm-dash-work{grid-template-columns:1fr}
 
   .tm-dash-custom{
     margin:0 0 16px;
@@ -1315,9 +1331,12 @@ function dashboard(){
 
  const margin=sales-costs;
 
- const pending=filteredOrders.filter(x=>
-   x.paymentStatus!=='Pagado'
- ).length;
+ const pendingOrders=filteredOrders.filter(x=>
+   x.paymentStatus!=='Pagado'&&x.status!=='cancelled'
+ );
+ const pending=pendingOrders.length;
+ const pendingTotal=pendingOrders.reduce((a,x)=>a+Number(x.total||0),0);
+ const futurePending=pendingOrders.filter(x=>String(dateOnly(x.serviceDate)||'')>isoDate(today)).length;
 
  const invoices=filteredSales.length;
 
@@ -1367,8 +1386,8 @@ function dashboard(){
    <div class="tm-dash-header">
      <div>
        <div class="tm-dash-eyebrow">TOUR MANAGER</div>
-       <h2>Dashboard</h2>
-       <p>Resumen general de operaciones</p>
+       <h2>Resumen de operaciones</h2>
+       <p>Ventas, costos y órdenes del período en un solo lugar.</p>
      </div>
 
      <div class="tm-dash-actions">
@@ -1435,6 +1454,23 @@ function dashboard(){
        <small>${paid} pagada${paid===1?'':'s'} en el período</small>
      </div>
 
+   </div>
+
+   <div class="tm-dash-work">
+     <section class="tm-dash-work-card">
+       <h3>Por pagar en el período</h3>
+       <p>Órdenes vigentes pendientes, con IVA incluido.</p>
+       <div class="tm-dash-work-value">${moneySafe(pendingTotal)} <small>en ${pending} OC${pending===1?'':'s'}</small></div>
+       <div class="tm-dash-quick"><button onclick="go('payments')">Revisar pagos →</button></div>
+     </section>
+     <section class="tm-dash-work-card">
+       <h3>Accesos rápidos</h3>
+       <p>${futurePending} OC${futurePending===1?'':'s'} pendiente${futurePending===1?'':'s'} con servicio futuro en el período.</p>
+       <div class="tm-dash-quick">
+         <button onclick="go('orders')">Órdenes de compra</button>
+         <button onclick="go('reports')">Reportes</button>
+       </div>
+     </section>
    </div>
 
    <div class="tm-dash-section">
