@@ -8,7 +8,7 @@ Antes de este cambio, el navegador creaba pagos dentro de una copia completa del
 
 ## Cambios
 
-- La pantalla CxP tiene vistas de **Pendientes y corte** e **Historial y comprobantes**. La fecha de corte filtra por fecha de servicio. Sigue disponible el filtro por proveedor, búsqueda y selección de varias OC del mismo proveedor.
+- La pantalla CxP tiene vistas de **Pendientes y corte** e **Historial y comprobantes**. La fecha de corte filtra por fecha de servicio. Sigue disponible el filtro por proveedor, búsqueda y selección de varias OC del mismo proveedor. Los proveedores aparecen como filas resumidas que se despliegan al abrirlas; una búsqueda o selección de proveedor abre los grupos coincidentes.
 - Cada OC ofrece vista previa de la orden y, si existe, de su factura. Los servicios futuros se señalan; el formulario admite marcar el pago como prepago, notas, fecha y número de comprobante.
 - `POST /api/payments` exige sesión y `payments.create`, valida la selección y registra el pago en una sola transacción PostgreSQL. Bloquea las OC, rechaza órdenes canceladas, ya pagadas o vinculadas, mezcla de proveedores o monedas y servicios futuros sin marca de prepago. Incrementa `sequences.P` dentro de la transacción y escribe el pago, sus relaciones y el estado de las OC.
 - Una migración aditiva al iniciar el servidor agrega `payments.is_prepayment BOOLEAN NOT NULL DEFAULT FALSE`. Los pagos previos se leen como pagos ordinarios; se conservan sus números y relaciones. El comprobante muestra tipo y notas y se puede imprimir o guardar como PDF con la función existente.
@@ -22,7 +22,7 @@ La ruta general de estado todavía acepta escrituras de módulos anteriores; con
 
 ## Verificación local
 
-`node --check server.js`, compilación de JavaScript del bloque principal del HTML mediante `new Function`, y `git diff --check`. No hubo conexión autorizada a la base de datos de producción ni se ejecutó una migración allí; las pruebas transaccionales descritas arriba deben ejecutarse con una base de prueba antes del despliegue.
+`node --check server.js`, análisis de los tres bloques JavaScript del HTML mediante `vm.Script`, y `git diff --check`. No se ejecutó ninguna migración ni escritura en producción; la copia lógica se extrajo mediante `pg_dump` y se restauró exclusivamente en staging. Las pruebas transaccionales restantes deben completarse allí antes del despliegue de producción.
 
 ## Prueba aislada en Railway (25/09/2026)
 
@@ -31,3 +31,9 @@ Se creó el entorno `cxp-staging`, conectado exclusivamente a la rama `cxp-stagi
 El corte al 25/09/2026 incluyó solo la OC del 24/09 ($113) y excluyó la del 01/10 ($226). La primera aplicación del pago detectó un defecto: `pg` devolvía `service_date` como `Date`, de modo que `String(date).slice(0,10)` no era ISO y clasificaba una OC pasada como futura. La consulta ahora convierte la fecha a texto ISO en PostgreSQL (`service_date::date::text`). Repetir los casos después del despliegue de esta corrección.
 
 Al crear el tour ficticio, la tarifa inicial automática falló en el módulo existente; el costo manual permitió crear las OC. Esto requiere revisión aparte y no prueba un fallo de pagos.
+
+Tras reiniciar el servicio de staging, se observó que la sesión se pierde (la aplicación usa `MemoryStore`). El arranque previo intentaba cargar `/api/state` antes de autenticar al usuario y dejaba un mensaje erróneo de base de datos y la pantalla sin datos hasta refrescar. Se movió `init()` después de la comprobación o envío del inicio de sesión. En la pantalla sin sesión, el despliegue corregido muestra solo el formulario de acceso, sin el falso error de conexión. La comprobación visual con sesión y las transacciones se reanudarán cuando haya acceso autenticado de prueba.
+
+La lista de OC por proveedor se compactó con `<details>`: el resumen muestra proveedor, cantidad y total; las OC se ven al abrir el grupo. La búsqueda y el filtro por proveedor abren automáticamente los resultados. El selector de grupo, la selección global, el pago, la vista previa y los filtros mantienen sus funciones; falta confirmar visualmente la interacción con sesión después del último despliegue.
+
+Por solicitud posterior, el dashboard de staging muestra un encabezado más claro, tarjetas adaptables, total pendiente (OC no canceladas, con IVA) y accesos directos a pagos, OC y reportes. Las métricas de ventas, costos y margen siguen calculándose con sus campos previos sin IVA. La verificación visual con una sesión activa sigue pendiente.
