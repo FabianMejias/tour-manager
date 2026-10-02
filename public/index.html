@@ -20,6 +20,41 @@ button{font:inherit;cursor:pointer}.primary{background:var(--accent);color:#fff;
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.full{grid-column:1/-1}
 .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.field textarea{min-height:75px}
 .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:17px}.filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.filters .field{min-width:180px}
+.pay-supplier{border:1px solid var(--line);border-radius:12px;margin:8px 0;background:#fff;overflow:hidden}
+.pay-supplier summary{cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:14px;padding:13px 16px;list-style:none}
+.pay-supplier summary::-webkit-details-marker{display:none}
+.pay-supplier summary:hover{background:#f8fafc}
+.pay-supplier summary:focus-visible{outline:2px solid #2563eb;outline-offset:-2px}
+.pay-supplier .pay-chevron{color:#64748b;transition:transform .15s}
+.pay-supplier[open] .pay-chevron{transform:rotate(180deg)}
+.pay-supplier .pay-table{border-top:1px solid var(--line);overflow-x:auto}
+.pay-supplier .pay-table table{margin:0;min-width:760px}
+@media(max-width:650px){.pay-supplier summary{gap:8px;padding:12px}.pay-supplier .pay-total{font-size:14px}}
+/* Reportes: presentación compacta; estilos limitados a este módulo. */
+.tm-report-tabs{background:#edf3f8;border-color:#dce6ee!important}
+.tm-report-tabs button{font-size:13px;font-weight:650;padding:9px 14px;border-radius:8px}
+.report{border-color:#dce6ee;box-shadow:0 3px 14px #102a4305;padding:20px}
+.report h3{color:#18364c;font-size:18px}
+.report .filters{padding:14px;background:#f5f8fb;border:1px solid #e2eaf1;border-radius:10px;margin-bottom:18px;gap:10px}
+.report .filters .field{min-width:140px;flex:1 1 150px}
+.report .filters input,.report .filters select{height:36px;font-size:12px}
+.report .filters button{font-size:12px;padding:8px 12px;height:36px}
+.report table{border:0;font-variant-numeric:tabular-nums}
+.report table th{background:#eaf1f7;color:#375269;font-size:11px;letter-spacing:.035em;padding:11px 10px;white-space:nowrap}
+.report table td{padding:10px;font-size:12px;line-height:1.4;border-bottom-color:#e8eef3}
+.report table tr:nth-child(odd) td{background:#f8fafc}
+.report table tr:hover td{background:#edf7f6}
+.report table td:last-child,.report table th:last-child{width:132px;white-space:nowrap}
+.report-docs{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.report-doc{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:30px;padding:0 7px;border-radius:6px;font-size:11px;font-weight:650;border:1px solid #c9ddeb;background:#eef5fb;color:#285b80;white-space:nowrap}
+.report-doc.invoice{background:#edf8f4;border-color:#c7e5d9;color:#20664b}
+.report-doc:hover{filter:brightness(.96)}
+.report-doc:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.report-doc svg{width:13px;height:13px;flex:none}
+#repSeller table td:nth-child(n+6):nth-child(-n+10),#repSeller table th:nth-child(n+6):nth-child(-n+10){text-align:right;white-space:nowrap}
+.report .cards .card{border-color:#e0e8ef;box-shadow:none;padding:15px}
+.report .cards .metric{font-size:25px;color:#19394f}
+@media(max-width:650px){.report{padding:12px}.report .filters .field{min-width:120px}.report table{min-width:780px}}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line)}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{background:#f8fafc}
 .badge{display:inline-block;border-radius:999px;padding:4px 8px;background:#ecfdf5;color:#047857;font-size:12px}.pending{background:#fff7ed;color:#c2410c}.empty{text-align:center;padding:28px;color:var(--muted)}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modal.open{display:flex}.modalbox{background:#fff;border-radius:14px;max-width:1000px;width:100%;max-height:94vh;overflow:auto;padding:22px}
@@ -305,14 +340,18 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   justify-content:space-between;
   align-items:flex-end;
   gap:24px;
-  margin-bottom:22px;
+  margin-bottom:18px;
+  padding:25px 28px;
+  border-radius:18px;
+  background:linear-gradient(115deg,#102a43,#164e63);
+  box-shadow:0 12px 28px rgba(16,42,67,.12);
 }
 
 .tm-dash-eyebrow{
   font-size:12px;
   font-weight:800;
   letter-spacing:1.5px;
-  color:#12877f;
+  color:#8be2d6;
   margin-bottom:4px;
 }
 
@@ -320,12 +359,12 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   margin:0;
   font-size:32px;
   line-height:1.15;
-  color:#17212b;
+  color:#fff;
 }
 
 .tm-dash-header p{
   margin:7px 0 0;
-  color:#718096;
+  color:#cbdce5;
   font-size:15px;
 }
 
@@ -347,6 +386,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   color:#64748b;
   margin:0 0 6px;
 }
+.tm-dash-header .tm-period-wrap label{color:#d5e7ed}
 
 .tm-period-wrap select,
 .tm-dash-custom input{
@@ -365,15 +405,15 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   min-height:44px;
   padding:0 17px;
   border-radius:10px;
-  border:1px solid #168b83;
-  background:#fff;
-  color:#147b75;
+  border:1px solid #83bcb9;
+  background:transparent;
+  color:#fff;
   font-weight:700;
   cursor:pointer;
 }
 
 .tm-dash-refresh:hover{
-  background:#f0faf9;
+  background:rgba(255,255,255,.12);
 }
 
 .tm-dash-period{
@@ -403,7 +443,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 
 .tm-dash-card{
   position:relative;
-  min-height:145px;
+  min-height:150px;
   box-sizing:border-box;
   background:#fff;
   border:1px solid #e2e8ee;
@@ -425,10 +465,19 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   display:block;
   margin-top:14px;
   color:#17212b;
-  font-size:27px;
+  font-size:clamp(22px,2vw,29px);
   line-height:1.1;
   letter-spacing:-.4px;
 }
+.tm-dash-work{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:20px}
+.tm-dash-work-card{background:#fff;border:1px solid #e2e8ee;border-radius:16px;padding:20px 22px;box-shadow:0 2px 10px rgba(30,45,60,.035)}
+.tm-dash-work-card h3{font-size:17px;margin:0 0 5px;color:#17212b}
+.tm-dash-work-card p{font-size:13px;color:#64748b;margin:0 0 16px}
+.tm-dash-work-value{font-size:28px;font-weight:750;color:#17212b;letter-spacing:-.5px}
+.tm-dash-work-value small{font-size:13px;font-weight:500;color:#64748b;letter-spacing:0}
+.tm-dash-quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:17px}
+.tm-dash-quick button{border:1px solid #cde2e0;background:#f6fbfa;color:#0f766e;border-radius:9px;padding:9px 12px;font-weight:700}
+.tm-dash-quick button:hover{background:#e8f5f3}
 
 .tm-dash-card small{
   display:block;
@@ -613,6 +662,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   .tm-dash-header{
     align-items:stretch;
     flex-direction:column;
+    padding:20px;
   }
 
   .tm-dash-actions{
@@ -627,6 +677,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
   .tm-dash-cards{
     grid-template-columns:1fr;
   }
+  .tm-dash-work{grid-template-columns:1fr}
 
   .tm-dash-custom{
     margin:0 0 16px;
@@ -1218,6 +1269,21 @@ function next(type){db.seq[type]=(db.seq[type]||0)+1;return type+'-'+String(db.s
 function $(id){return document.getElementById(id)}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function money(v){return '$'+Number(v||0).toFixed(2)}
+function payMoney(value,currency='USD'){
+ return `${esc(currency)} ${currency==='CRC'?'₡'+Number(value||0).toFixed(2):money(value)}`;
+}
+function payCurrencyTotals(orders){
+ const totals=orders.reduce((out,o)=>{
+   const currency=o.currency||'USD';
+   out[currency]=(out[currency]||0)+Number(o.total||0);
+   return out;
+ },{});
+ return Object.entries(totals).sort(([a],[b])=>a.localeCompare(b))
+   .map(([currency,total])=>payMoney(total,currency)).join(' · ')||'Sin saldo pendiente';
+}
+function paymentCurrency(p){
+ return db.orders.find(o=>(p.orderIds||[]).includes(o.id))?.currency||'USD';
+}
 function calc(base,applyTax=true){base=Number(base||0);const tax=applyTax?base*TAX:0;return{subtotal:base,tax,total:base+tax}}
 function supplier(id){return db.suppliers.find(x=>x.id===id)?.name||''}
 function seller(id){return db.sellers.find(x=>x.id===id)?.name||''}
@@ -1297,17 +1363,24 @@ function dashboard(){
  const filteredSales=db.sales.filter(x=>period==='all'||inRange(x.serviceDate,from,to));
  const filteredOrders=db.orders.filter(x=>period==='all'||inRange(x.serviceDate,from,to));
 
- const sales=filteredSales.reduce((a,x)=>
-   a+(Number(x.subtotal||0)-Number(x.discountAmount||0)),0);
+ function totalsByCurrency(rows,amount){
+   return rows.reduce((totals,x)=>{
+     const currency=x.currency||'USD';
+     totals[currency]=(totals[currency]||0)+amount(x);
+     return totals;
+   },{});
+ }
+ const sales=totalsByCurrency(filteredSales,x=>Number(x.subtotal||0)-Number(x.discountAmount||0));
+ const costs=totalsByCurrency(filteredOrders,x=>Number(x.subtotal||0));
+ const margin=Object.fromEntries([...new Set([...Object.keys(sales),...Object.keys(costs)])]
+   .map(currency=>[currency,(sales[currency]||0)-(costs[currency]||0)]));
 
- const costs=filteredOrders.reduce((a,x)=>
-   a+Number(x.subtotal||0),0);
-
- const margin=sales-costs;
-
- const pending=filteredOrders.filter(x=>
-   x.paymentStatus!=='Pagado'
- ).length;
+ const pendingOrders=filteredOrders.filter(x=>
+   x.paymentStatus!=='Pagado'&&x.status!=='cancelled'
+ );
+ const pending=pendingOrders.length;
+ const pendingTotals=totalsByCurrency(pendingOrders,x=>Number(x.total||0));
+ const futurePending=pendingOrders.filter(x=>String(dateOnly(x.serviceDate)||'')>isoDate(today)).length;
 
  const invoices=filteredSales.length;
 
@@ -1334,6 +1407,11 @@ function dashboard(){
  }
 
  const moneySafe=v=>money(Number(v||0));
+ const formatTotals=(totals,empty='Sin movimientos')=>Object.entries(totals)
+   .sort(([a],[b])=>a.localeCompare(b))
+   .map(([currency,total])=>`${esc(currency)} ${currency==='CRC'?'₡'+Number(total).toFixed(2):moneySafe(total)}`)
+   .join(' · ')||empty;
+ const pendingSummary=formatTotals(pendingTotals,'Sin saldo pendiente');
 
  const customBox=period==='custom'
  ? `<div class="tm-dash-custom">
@@ -1357,8 +1435,8 @@ function dashboard(){
    <div class="tm-dash-header">
      <div>
        <div class="tm-dash-eyebrow">TOUR MANAGER</div>
-       <h2>Dashboard</h2>
-       <p>Resumen general de operaciones</p>
+       <h2>Resumen de operaciones</h2>
+       <p>Ventas, costos y órdenes del período en un solo lugar.</p>
      </div>
 
      <div class="tm-dash-actions">
@@ -1394,7 +1472,7 @@ function dashboard(){
          <span>Ventas sin IVA</span>
          ${icon('↗')}
        </div>
-       <strong>${moneySafe(sales)}</strong>
+       <strong>${formatTotals(sales)}</strong>
        <small>${invoices} factura${invoices===1?'':'s'} emitida${invoices===1?'':'s'}</small>
      </div>
 
@@ -1403,7 +1481,7 @@ function dashboard(){
          <span>Costos sin IVA</span>
          ${icon('↘')}
        </div>
-       <strong>${moneySafe(costs)}</strong>
+       <strong>${formatTotals(costs)}</strong>
        <small>${filteredOrders.length} OC${filteredOrders.length===1?'':'s'} del período</small>
      </div>
 
@@ -1412,7 +1490,7 @@ function dashboard(){
          <span>Margen</span>
          ${icon('◆')}
        </div>
-       <strong>${moneySafe(margin)}</strong>
+       <strong>${formatTotals(margin)}</strong>
        <small>Ventas − costos</small>
      </div>
 
@@ -1425,6 +1503,23 @@ function dashboard(){
        <small>${paid} pagada${paid===1?'':'s'} en el período</small>
      </div>
 
+   </div>
+
+   <div class="tm-dash-work">
+     <section class="tm-dash-work-card">
+       <h3>Por pagar en el período</h3>
+       <p>Órdenes vigentes pendientes, con IVA incluido.</p>
+       <div class="tm-dash-work-value">${pendingSummary} <small>en ${pending} OC${pending===1?'':'s'}</small></div>
+       <div class="tm-dash-quick"><button onclick="go('payments')">Revisar pagos →</button></div>
+     </section>
+     <section class="tm-dash-work-card">
+       <h3>Accesos rápidos</h3>
+       <p>${futurePending} OC${futurePending===1?'':'s'} pendiente${futurePending===1?'':'s'} con servicio futuro en el período.</p>
+       <div class="tm-dash-quick">
+         <button onclick="go('orders')">Órdenes de compra</button>
+         <button onclick="go('reports')">Reportes</button>
+       </div>
+     </section>
    </div>
 
    <div class="tm-dash-section">
@@ -5944,7 +6039,7 @@ function renderPayments(){
            font-weight:700;
            margin-top:5px;
          ">
-           ${money(grandTotal)}
+           ${payCurrencyTotals(rows)}
          </div>
        </div>
 
@@ -5988,148 +6083,33 @@ function renderPayments(){
     * Proveedores
     */
 
-   const groupedHtml=groups.map(g=>`
-
-     <div style="
-       border:1px solid #e2e8ee;
-       border-radius:15px;
-       overflow:hidden;
-       margin-bottom:16px;
-       background:#fff;
-     ">
-
-       <div style="
-         display:flex;
-         justify-content:space-between;
-         align-items:center;
-         gap:15px;
-         padding:15px 18px;
-         background:#f8fafc;
-         border-bottom:1px solid #e2e8ee;
-       ">
-
-         <div>
-
-           <strong style="font-size:16px">
-             ${esc(g.name)}
-           </strong>
-
-           <div style="
-             font-size:12px;
-             color:#64748b;
-             margin-top:3px;
-           ">
-             ${g.orders.length}
-             servicio(s) pendiente(s)
-           </div>
-
-         </div>
-
-         <strong style="font-size:18px">
-           ${money(g.total)}
-         </strong>
-
-       </div>
-
-
-       <div style="overflow-x:auto">
-
-         <table style="margin:0">
-
-           <tr>
-
-             <th>
-               <input
-                 type="checkbox"
-                 onchange="
-                   document
-                     .querySelectorAll(
-                       '.payGroup-${esc(g.supplierId||'none')}'
-                     )
-                     .forEach(x=>x.checked=this.checked)
-                 ">
-             </th>
-
-             <th>OC</th>
-             <th>Cliente</th>
-             <th>Tour</th>
-             <th>Fecha servicio</th>
-             <th>Total</th>
-             <th></th>
-
-           </tr>
-
-
-           ${g.orders.map(o=>`
-
+   const groupedHtml=groups.map((g,index)=>`
+     <details class="pay-supplier" ${q||sf?'open':''}>
+       <summary>
+         <span><strong>${esc(g.name)}</strong><br><small>${g.orders.length} OC${g.orders.length===1?'':'s'} pendiente${g.orders.length===1?'':'s'}</small></span>
+         <strong class="pay-total">${payCurrencyTotals(g.orders)}</strong>
+         <span class="pay-chevron" aria-hidden="true">⌄</span>
+       </summary>
+       <div class="pay-table">
+         <table>
+           <thead><tr>
+             <th><input type="checkbox" aria-label="Seleccionar todas las OC de ${esc(g.name)}" onchange="document.querySelectorAll('.payGroup-${index}').forEach(x=>x.checked=this.checked)"></th>
+             <th>OC</th><th>Cliente</th><th>Servicio</th><th>Fecha</th><th>Total</th><th>Acciones</th>
+           </tr></thead>
+           <tbody>${g.orders.map(o=>`
              <tr>
-
-               <td>
-
-                 <input
-                   class="payItem payGroup-${esc(g.supplierId||'none')}"
-                   type="checkbox"
-                   value="${o.id}">
-
-               </td>
-
-
-               <td>
-                 <b>${o.number}</b>
-               </td>
-
-
-               <td>
-                 ${esc(o.customerName)}
-               </td>
-
-
-               <td>
-                 ${esc(tmOrderServiceLabel(o))}
-               </td>
-
-
-               <td>
-
-                 ${displayServiceDate(o.serviceDate)}
-
-                 ${
-                   o.time
-                     ? `<br>
-                        <small>
-                          ${formatServiceTime(o.time)}
-                        </small>`
-                     : ''
-                 }
-
-               </td>
-
-
-               <td>
-                 <b>${money(o.total)}</b>
-               </td>
-
-
-               <td>
-
-                 <button class="secondary" onclick="previewOrder('${o.id}')">Ver OC</button>
-                 ${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:''}
-                 ${dateOnly(o.serviceDate)>localDate()?'<small>Servicio futuro · prepago</small>':''}
-
-               </td>
-
-             </tr>
-
-           `).join('')}
-
+               <td><input class="payItem payGroup-${index}" type="checkbox" value="${esc(o.id)}"></td>
+               <td><b>${esc(o.number)}</b></td>
+               <td>${esc(o.customerName)}</td>
+               <td>${esc(tmOrderServiceLabel(o))}</td>
+               <td>${displayServiceDate(o.serviceDate)}${o.time?`<br><small>${formatServiceTime(o.time)}</small>`:''}</td>
+               <td><b>${payMoney(o.total,o.currency||'USD')}</b>${dateOnly(o.serviceDate)>localDate()?'<br><small>Prepago</small>':''}</td>
+               <td><button class="secondary" onclick="previewOrder('${o.id}')">Ver OC</button>${o.saleId?`<button class="secondary" onclick="previewSale('${o.saleId}')">Ver factura</button>`:''}</td>
+             </tr>`).join('')}</tbody>
          </table>
-
        </div>
-
-     </div>
-
+     </details>
    `).join('');
-
 
    $('pendingPayments').innerHTML=rows.length
 
@@ -6235,7 +6215,7 @@ function renderPayments(){
            </td>
 
            <td>
-             ${money(p.total)}
+             ${payMoney(p.total,paymentCurrency(p))}
            </td>
 
            <td>
@@ -6275,9 +6255,11 @@ let pendingPaymentOrderIds=[];
 function payOpenForm(){
  const os=selectedOrders();if(!os.length)return alert('Seleccione al menos una OC para pagar.');
  const ss=[...new Set(os.map(o=>o.supplierId))];if(ss.length!==1)return alert('Seleccione OCs de un solo proveedor.');
+ const currencies=[...new Set(os.map(o=>o.currency||'USD'))];
+ if(currencies.length!==1)return alert('Seleccione OCs de una sola moneda (USD o CRC).');
  const total=os.reduce((a,o)=>a+Number(o.total||0),0);
  pendingPaymentOrderIds=os.map(o=>o.id);
- modal('Registrar pago',`<div class="notice"><b>${os.length}</b> OC(s) · Proveedor: <b>${esc(supplier(ss[0]))}</b> · Total: <b>${money(total)}</b></div>
+ modal('Registrar pago',`<div class="notice"><b>${os.length}</b> OC(s) · Proveedor: <b>${esc(supplier(ss[0]))}</b> · Total: <b>${payMoney(total,currencies[0])}</b></div>
  <div class="grid"><div class="field"><label>Fecha de pago *</label><input id="paymentDate" type="date" value="${localDate()}"></div><div class="field"><label>Número de comprobante *</label><input id="paymentReceipt" placeholder="TRX-12345"></div></div>
  <div class="field"><label><input type="checkbox" id="paymentPrepayment" ${os.some(o=>dateOnly(o.serviceDate)>localDate())?'checked':''}> Prepago (servicios futuros)</label></div>
  <div class="field"><label>Notas opcionales</label><input id="paymentNotes" maxlength="2000"></div>
@@ -6315,7 +6297,7 @@ function paymentDoc(p){
       <div class="meta">
         <b>Pago:</b> ${p.number}<br>
         <b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br>
-        <b>Fecha:</b> ${p.date}<br>
+        <b>Fecha:</b> ${displayServiceDate(p.date)}<br>
         <b>Comprobante:</b> ${esc(p.receipt)}<br>
         <b>Tipo:</b> ${p.prepayment?'Prepago':'Pago de servicios'}<br>
         ${p.notes?`<b>Notas:</b> ${esc(p.notes)}`:''}
@@ -6331,12 +6313,12 @@ function paymentDoc(p){
           <b>${esc(o.number||'OC')}</b>
           · ${esc(o.customerName||'-')}
           · ${esc(tmOrderServiceLabel(o))}
-          · ${money(o.total)}
+          · ${payMoney(o.total,o.currency||'USD')}
         </div>
       `).join('')}
 
       <div class="total">
-        TOTAL PAGADO: ${money(p.total)}
+        TOTAL PAGADO: ${payMoney(p.total,paymentCurrency(p))}
       </div>
 
     </div>
@@ -6363,7 +6345,7 @@ function printPayment(id){
 
       <b>Pago:</b> ${p.number}<br>
       <b>Proveedor:</b> ${esc(supplier(p.supplierId))}<br>
-      <b>Fecha:</b> ${p.date}<br>
+      <b>Fecha:</b> ${displayServiceDate(p.date)}<br>
       <b>Comprobante:</b> ${esc(p.receipt)}
 
       <hr>
@@ -6371,13 +6353,13 @@ function printPayment(id){
       ${os.map(o=>`
         ${esc(o.number||'OC')}
         · ${esc(tmOrderServiceLabel(o))}
-        · ${money(o.total)}
+        · ${payMoney(o.total,o.currency||'USD')}
         <br>
       `).join('')}
 
       <hr>
 
-      <b>TOTAL ${money(p.total)}</b>
+      <b>TOTAL ${payMoney(p.total,paymentCurrency(p))}</b>
 
     </div>
   `);
@@ -9138,6 +9120,11 @@ function printSale(id){
 }
 
 
+function reportDocuments(order,sale){
+ const icon='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5v3h3M6 8h4M6 10.5h4"/></svg>';
+ return `<div class="report-docs">${order?`<button type="button" class="report-doc" title="Ver ${esc(order.number||'orden de compra')}" aria-label="Ver orden de compra ${esc(order.number||'')}" onclick="previewOrder('${order.id}')">${icon}OC</button>`:''}${sale?`<button type="button" class="report-doc invoice" title="Ver factura ${esc(sale.number||'')}" aria-label="Ver factura ${esc(sale.number||'')}" onclick="previewSale('${sale.id}')">${icon}Factura</button>`:''}</div>`;
+}
+
 function reports(){return `
 <div class="toolbar">
   <div>
@@ -9146,7 +9133,7 @@ function reports(){return `
   </div>
 </div>
 
-<div class="card" style="padding:10px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+<div class="card tm-report-tabs" style="padding:8px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
   <button id="reportBtnFuture" class="primary" onclick="reportTab('future')">Tours por fecha de servicio</button>
   <button id="reportBtnSeller" class="secondary" onclick="reportTab('seller')">Vendedores</button>
   <button id="reportBtnAnalysis" class="secondary" onclick="reportTab('analysis')">Análisis de ventas</button>
@@ -9865,26 +9852,7 @@ function renderReports(){
 
             </td>
 
-            <td>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-
-                <button
-                  class="secondary"
-                  onclick="previewOrder('${o.id}')">
-                  ${esc(o.number||'OC')}
-                </button>
-
-                ${sale
-                  ?`<button
-                      class="secondary"
-                      onclick="previewSale('${sale.id}')">
-                      ${esc(sale.number||'Factura')}
-                    </button>`
-                  :''
-                }
-
-              </div>
-            </td>
+            <td>${reportDocuments(o,sale)}</td>
 
           </tr>`;
 
@@ -9955,12 +9923,7 @@ const sellerRows=sellerReportRows();
             <td>${money(r.margin)}</td>
             <td>${r.rate}%</td>
             <td><strong>${money(r.commission)}</strong></td>
-            <td>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                ${r.o?`<button class="secondary" onclick="previewOrder('${r.o.id}')">${esc(r.o.number||'OC')}</button>`:''}
-                <button class="secondary" onclick="previewSale('${r.s.id}')">${esc(r.s.number||'Factura')}</button>
-              </div>
-            </td>
+            <td>${reportDocuments(r.o,r.s)}</td>
           </tr>
         `).join('')}
 
@@ -11264,7 +11227,6 @@ async function saveTour(id){
 }
 
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
-init();
 </script>
 
 <section id="tm-users-admin" style="display:none;padding:24px;max-width:1250px;margin:auto;">
@@ -11398,13 +11360,13 @@ async function tmAuthInit(){
   try{
     const st=await req('/api/auth/status');
     if(st.authenticated){
-      const p=await req('/api/auth/permissions'); TM_AUTH={user:st.user,permissions:p.permissions}; hide(); VIEWS=BASE_VIEWS.slice(); render(); return;
+      const p=await req('/api/auth/permissions'); TM_AUTH={user:st.user,permissions:p.permissions}; hide(); VIEWS=BASE_VIEWS.slice(); await init(); return;
     }
     show(st.userCount===0);
     form.onsubmit=async e=>{e.preventDefault();document.getElementById('tm-auth-msg').textContent='';try{
       const setup=st.userCount===0; const body={email:document.getElementById('tm-auth-email').value,password:document.getElementById('tm-auth-password').value}; if(setup)body.name=document.getElementById('tm-auth-name').value;
       const d=await req(setup?'/api/auth/bootstrap':'/api/auth/login',{method:'POST',body:JSON.stringify(body)});
-      const p=await req('/api/auth/permissions');TM_AUTH={user:d.user,permissions:p.permissions};hide();render();
+      const p=await req('/api/auth/permissions');TM_AUTH={user:d.user,permissions:p.permissions};hide();await init();
     }catch(err){document.getElementById('tm-auth-msg').textContent=err.message;}};
   }catch(e){screen.style.display='flex';document.getElementById('tm-auth-msg').textContent='No fue posible conectar con el servidor.'}
 }
