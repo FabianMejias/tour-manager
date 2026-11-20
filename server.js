@@ -2958,11 +2958,36 @@ app.put('/api/state', async (req,res)=>{
 });
 
 app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+
+async function reconcileSaleLinks() {
+  const result = await pool.query(`
+    UPDATE purchase_orders po
+    SET sale_id = s.id
+    FROM sales s
+    WHERE po.sale_id IS NULL
+      AND po.operation_number IS NOT NULL
+      AND po.operation_number = s.operation_number
+      AND (
+        SELECT COUNT(*)
+        FROM sales sx
+        WHERE sx.operation_number = po.operation_number
+      ) = 1
+  `);
+
+  if (result.rowCount) {
+    console.log(
+      'Vínculos OC-factura reconciliados automáticamente:',
+      result.rowCount
+    );
+  }
+}
+
 async function startServer() {
   try {
     await purchaseOrderItemsReady;
     await accountsPayableReady;
     await saleItemsReady;
+    await reconcileSaleLinks();
 
     app.listen(port, () => {
       console.log(`Tour Manager escuchando en ${port}`);
