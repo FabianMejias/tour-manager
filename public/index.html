@@ -1268,9 +1268,9 @@ function uid(){return crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.
 function next(type){db.seq[type]=(db.seq[type]||0)+1;return type+'-'+String(db.seq[type]).padStart(6,'0')}
 function $(id){return document.getElementById(id)}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-function money(v){return '$'+Number(v||0).toFixed(2)}
+function money(v){return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function payMoney(value,currency='USD'){
- return `${esc(currency)} ${currency==='CRC'?'₡'+Number(value||0).toFixed(2):money(value)}`;
+ return `${esc(currency)} ${currency==='CRC'?'₡'+Number(value||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):money(value)}`;
 }
 function payCurrencyTotals(orders){
  const totals=orders.reduce((out,o)=>{
