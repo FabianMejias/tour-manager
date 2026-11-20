@@ -2742,7 +2742,7 @@ async function replaceState(client, db) {
                 $1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW()
               )
               ON CONFLICT(id) DO UPDATE SET
-                sale_id=EXCLUDED.sale_id,
+                sale_id=COALESCE(purchase_orders.sale_id, EXCLUDED.sale_id),
                 tour_id=EXCLUDED.tour_id,
                 description=EXCLUDED.description,
                 quantity=EXCLUDED.quantity,
