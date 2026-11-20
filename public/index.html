@@ -1274,7 +1274,10 @@ function formatAmount(v){
    maximumFractionDigits:2
  });
 }
-function money(v){return '
+function money(v){return '$'+formatAmount(v)}
+function payMoney(value,currency='USD'){
+ return esc(currency)+' '+(currency==='CRC'?'₡'+formatAmount(value):money(value));
+}
 function payCurrencyTotals(orders){
  const totals=orders.reduce((out,o)=>{
    const currency=o.currency||'USD';
@@ -1412,7 +1415,7 @@ function dashboard(){
  const moneySafe=v=>money(Number(v||0));
  const formatTotals=(totals,empty='Sin movimientos')=>Object.entries(totals)
    .sort(([a],[b])=>a.localeCompare(b))
-   .map(([currency,total])=>`${esc(currency)} ${currency==='CRC'?'₡'+formatAmount(total):moneySafe(total)}`)
+   .map(([currency,total])=>esc(currency)+' '+(currency==='CRC'?'₡'+formatAmount(total):moneySafe(total)))
    .join(' · ')||empty;
  const pendingSummary=formatTotals(pendingTotals,'Sin saldo pendiente');
 
