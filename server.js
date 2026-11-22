@@ -2742,7 +2742,7 @@ async function replaceState(client, db) {
                 $1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW()
               )
               ON CONFLICT(id) DO UPDATE SET
-                sale_id=COALESCE(purchase_orders.sale_id, EXCLUDED.sale_id),
+                sale_id=EXCLUDED.sale_id,
                 tour_id=EXCLUDED.tour_id,
                 description=EXCLUDED.description,
                 quantity=EXCLUDED.quantity,
@@ -2855,7 +2855,7 @@ async function replaceState(client, db) {
           payment_status=CASE WHEN purchase_orders.payment_status='Pagado' THEN 'Pagado' ELSE EXCLUDED.payment_status END,
           payment_date=CASE WHEN purchase_orders.payment_status='Pagado' THEN purchase_orders.payment_date ELSE EXCLUDED.payment_date END,
           payment_receipt=CASE WHEN purchase_orders.payment_status='Pagado' THEN purchase_orders.payment_receipt ELSE EXCLUDED.payment_receipt END,
-          sale_id=EXCLUDED.sale_id
+          sale_id=COALESCE(purchase_orders.sale_id, EXCLUDED.sale_id)
       `,[
         x.id,x.number,x.op,x.clientId,x.supplierId,x.sellerId,x.tourId,
         x.customerName,x.issueDate,x.serviceDate,x.time||null,x.place||null,x.dropOff||null,
