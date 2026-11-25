@@ -11535,9 +11535,14 @@ function tmPreviewOtherSaleObject(s,created){
    <div class="preview">${tmOtherSaleDoc(s)}</div>
    <div class="actions">
      <button class="secondary" onclick="closeModal();if(view==='otherSales')renderOtherSales()">Cerrar</button>
-     <button class="primary" onclick="printRaw(tmOtherSaleDoc(tmOtherSalesData.find(x=>x.id==='${s.id}')||${JSON.stringify(s)}))">Imprimir</button>
+     <button class="primary" onclick="tmPrintOtherSale('${s.id}')">Imprimir</button>
    </div>
  `);
+}
+
+function tmPrintOtherSale(id){
+ const s=tmOtherSalesData.find(x=>x.id===id);
+ if(s)printRaw(tmOtherSaleDoc(s));
 }
 
 function tmOpenReceiveOtherSale(id){
