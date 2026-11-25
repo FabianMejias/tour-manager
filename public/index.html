@@ -1216,6 +1216,29 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 }
 </style>
 
+
+<style>
+.tm-other-sales{max-width:1450px;margin:auto}
+.tm-os-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px}
+.tm-os-head h2{margin:4px 0 5px}.tm-os-head p{margin:0;color:#64748b}
+.tm-os-filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px}
+.tm-os-filters label,.tm-os-form-grid label,.tm-os-item-row label{display:flex;flex-direction:column;gap:5px;font-weight:600;color:#334155}
+.tm-os-filters input,.tm-os-filters select,.tm-os-form-grid select,.tm-os-item-row input{padding:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}
+.tm-os-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+.tm-os-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:15px;display:flex;flex-direction:column;gap:4px}
+.tm-os-card span{font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase}.tm-os-card strong{font-size:24px}.tm-os-card small{color:#64748b}
+.tm-os-pending{border-color:#f59e0b}
+.tm-os-actions{display:flex;gap:5px;flex-wrap:wrap}.tm-os-actions button{font-size:12px;padding:6px 8px}
+.tm-os-receive{background:#15803d!important;color:#fff!important}.tm-os-cancel{background:#fff!important;color:#b91c1c!important;border:1px solid #fecaca!important}
+.tm-os-badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.tm-os-badge.pending{background:#fef3c7;color:#92400e}.tm-os-badge.received{background:#dcfce7;color:#166534}.tm-os-badge.cancelled{background:#fee2e2;color:#991b1b}
+.tm-os-item-row{display:flex;gap:10px;align-items:end;border-bottom:1px solid #e2e8f0;padding:10px 0}.tm-os-item-row label{flex:1}
+.tm-os-remove{height:38px;width:38px;background:#fff;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;font-size:20px}
+.tm-os-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 14px}
+.tm-os-totals{margin:12px 0;background:#f8fafc;border-radius:10px;padding:12px}.tm-os-totals>div{display:flex;justify-content:space-between;padding:4px 0}
+.tm-os-grand{font-size:18px;border-top:1px solid #cbd5e1;margin-top:5px;padding-top:9px!important}
+@media(max-width:900px){.tm-os-cards{grid-template-columns:1fr 1fr}.tm-os-item-row{flex-wrap:wrap}.tm-os-head{flex-direction:column}}
+</style>
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
@@ -1293,11 +1316,13 @@ function preview(title,body,printAction){modal(title,`<div class="preview">${bod
 function printRaw(content){$('printArea').innerHTML=content;$('printArea').style.display='block';window.print();$('printArea').style.display='none';$('printArea').innerHTML=''}
 
 function render(){
- $('nav').innerHTML=VIEWS.map(v=>`<button class="${view===v[0]?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('') + (tmCan('users.view') ? `<button onclick="go('users')" class="${view==='users'?'active':''}">Usuarios</button>` : '') + `<button onclick="tmLogout()" style="margin-left:auto">Salir (${TM_AUTH?.user?.name||''})</button>`;
- $('app').innerHTML=view==='users'?'':view==='dashboard'?dashboard():view==='orders'?orders():view==='payments'?payments():view==='sales'?sales():view==='reports'?reports():view==='clients'?clients():view==='tours'?tours():view==='suppliers'?suppliers():sellers();
+ const otherSalesButton=tmCan('other_sales.view') ? `<button onclick="go('otherSales')" class="${view==='otherSales'?'active':''}">Otras ventas</button>` : '';
+ $('nav').innerHTML=VIEWS.map(v=>`<button class="${view===v[0]?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('') + otherSalesButton + (tmCan('users.view') ? `<button onclick="go('users')" class="${view==='users'?'active':''}">Usuarios</button>` : '') + `<button onclick="tmLogout()" style="margin-left:auto">Salir (${TM_AUTH?.user?.name||''})</button>`;
+ $('app').innerHTML=view==='users'?'':view==='otherSales'?otherSales():view==='dashboard'?dashboard():view==='orders'?orders():view==='payments'?payments():view==='sales'?sales():view==='reports'?reports():view==='clients'?clients():view==='tours'?tours():view==='suppliers'?suppliers():sellers();
  if(view==='users'){ $('app').innerHTML=''; window.TourManagerUsers?.show(); } else { window.TourManagerUsers?.hide(); }
  if(view==='payments')renderPayments();
  if(view==='reports')renderReports();
+ if(view==='otherSales')renderOtherSales();
 }
 function go(v){view=v;render()}
 
@@ -11222,6 +11247,361 @@ async function saveTour(id){
  render();
 }
 
+
+let tmOtherSalesData=[];
+window.tmOtherSaleFrom=window.tmOtherSaleFrom||localDate();
+window.tmOtherSaleTo=window.tmOtherSaleTo||localDate();
+window.tmOtherSaleStatus=window.tmOtherSaleStatus||'Todos';
+
+function otherSales(){
+ return `<div class="tm-other-sales">
+   <div class="tm-os-head">
+     <div>
+       <div class="tm-dash-eyebrow">CONTROL DE RECEPCIÓN</div>
+       <h2>Otras ventas</h2>
+       <p>Facturación independiente de Tours para bebidas, café y otros artículos.</p>
+     </div>
+     <div class="tm-os-head-actions">
+       ${tmCan('other_sales.create')?'<button class="primary" onclick="tmOpenOtherSale()">+ Nueva venta</button>':''}
+     </div>
+   </div>
+
+   <div class="tm-os-filters">
+     <label>Desde
+       <input type="date" value="${esc(window.tmOtherSaleFrom||'')}" onchange="window.tmOtherSaleFrom=this.value;renderOtherSales()">
+     </label>
+     <label>Hasta
+       <input type="date" value="${esc(window.tmOtherSaleTo||'')}" onchange="window.tmOtherSaleTo=this.value;renderOtherSales()">
+     </label>
+     <label>Control
+       <select onchange="window.tmOtherSaleStatus=this.value;renderOtherSales()">
+         <option ${window.tmOtherSaleStatus==='Todos'?'selected':''}>Todos</option>
+         <option ${window.tmOtherSaleStatus==='Pendiente'?'selected':''}>Pendiente</option>
+         <option ${window.tmOtherSaleStatus==='Recibido'?'selected':''}>Recibido</option>
+       </select>
+     </label>
+     <button class="secondary" onclick="renderOtherSales()">Actualizar</button>
+   </div>
+
+   <div id="tmOtherSalesSummary"></div>
+   <div class="card" style="margin-top:14px">
+     <div id="tmOtherSalesTable"><p>Cargando...</p></div>
+   </div>
+ </div>`;
+}
+
+async function tmOtherSalesApi(url,opt){
+ const r=await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(d.error||'Error de servidor');
+ return d;
+}
+
+function tmOtherDateTime(v){
+ if(!v)return '-';
+ const d=new Date(v);
+ if(Number.isNaN(d.getTime()))return esc(v);
+ return d.toLocaleString('es-CR',{
+   timeZone:'America/Costa_Rica',
+   year:'numeric',month:'2-digit',day:'2-digit',
+   hour:'2-digit',minute:'2-digit'
+ });
+}
+
+function tmOtherItemsLabel(s){
+ const items=Array.isArray(s.items)?s.items:[];
+ if(!items.length)return '-';
+ if(items.length===1)return esc(items[0].description);
+ return esc(items.slice(0,2).map(x=>x.description).join(' · ')+(items.length>2?' +'+(items.length-2):''));
+}
+
+async function renderOtherSales(){
+ const table=$('tmOtherSalesTable');
+ const summary=$('tmOtherSalesSummary');
+ if(!table||!summary)return;
+
+ try{
+   table.innerHTML='<p>Cargando...</p>';
+   const qs=new URLSearchParams();
+   if(window.tmOtherSaleFrom)qs.set('from',window.tmOtherSaleFrom);
+   if(window.tmOtherSaleTo)qs.set('to',window.tmOtherSaleTo);
+   if(window.tmOtherSaleStatus!=='Todos')qs.set('receiveStatus',window.tmOtherSaleStatus);
+
+   const data=await tmOtherSalesApi('/api/other-sales?'+qs.toString());
+   tmOtherSalesData=data.sales||[];
+
+   const active=tmOtherSalesData.filter(x=>x.status==='active');
+   const pending=active.filter(x=>x.receiveStatus==='Pendiente');
+   const received=active.filter(x=>x.receiveStatus==='Recibido');
+   const total=active.reduce((a,x)=>a+Number(x.total||0),0);
+   const pendingTotal=pending.reduce((a,x)=>a+Number(x.total||0),0);
+   const receivedTotal=received.reduce((a,x)=>a+Number(x.total||0),0);
+   const cash=active.filter(x=>x.paymentMethod==='Efectivo').reduce((a,x)=>a+Number(x.total||0),0);
+   const card=active.filter(x=>x.paymentMethod==='Tarjeta').reduce((a,x)=>a+Number(x.total||0),0);
+
+   summary.innerHTML=`
+     <div class="tm-os-cards">
+       <div class="tm-os-card"><span>Total facturado</span><strong>${money(total)}</strong><small>${active.length} venta${active.length===1?'':'s'}</small></div>
+       <div class="tm-os-card"><span>Recibido</span><strong>${money(receivedTotal)}</strong><small>${received.length} confirmada${received.length===1?'':'s'}</small></div>
+       <div class="tm-os-card tm-os-pending"><span>Pendiente</span><strong>${money(pendingTotal)}</strong><small>${pending.length} por revisar</small></div>
+       <div class="tm-os-card"><span>Medios de pago</span><strong style="font-size:18px">Efectivo ${money(cash)}</strong><small>Tarjeta ${money(card)}</small></div>
+     </div>`;
+
+   if(!tmOtherSalesData.length){
+     table.innerHTML='<div style="padding:26px;text-align:center;color:#64748b">No hay Otras ventas en este período.</div>';
+     return;
+   }
+
+   table.innerHTML=`
+     <div style="overflow:auto">
+     <table>
+       <thead><tr>
+         <th>Venta</th><th>Fecha / hora</th><th>Usuario</th><th>Detalle</th>
+         <th>Pago</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Control</th><th>Acciones</th>
+       </tr></thead>
+       <tbody>
+       ${tmOtherSalesData.map(s=>`
+         <tr style="${s.status==='cancelled'?'opacity:.55':''}">
+           <td><b>${esc(s.number)}</b>${s.status==='cancelled'?'<br><small style="color:#b91c1c">ANULADA</small>':''}</td>
+           <td>${tmOtherDateTime(s.saleDate)}</td>
+           <td>${esc(s.createdBy||'-')}</td>
+           <td>${tmOtherItemsLabel(s)}</td>
+           <td>${esc(s.paymentMethod)}</td>
+           <td>${money(s.subtotal)}</td>
+           <td>${s.taxApplied?money(s.tax):'Sin IVA'}</td>
+           <td><b>${money(s.total)}</b></td>
+           <td>
+             ${s.status==='cancelled'
+               ?'<span class="tm-os-badge cancelled">Anulada</span>'
+               :s.receiveStatus==='Recibido'
+                 ?'<span class="tm-os-badge received">✓ Recibido</span><br><small>'+esc(s.receivedBy||'')+'</small>'
+                 :'<span class="tm-os-badge pending">Pendiente</span>'}
+           </td>
+           <td>
+             <div class="tm-os-actions">
+               <button onclick="tmPreviewOtherSale('${s.id}')">Ver / Imprimir</button>
+               ${s.status==='active'&&s.receiveStatus==='Pendiente'&&tmCan('other_sales.receive')
+                  ?'<button class="tm-os-receive" onclick="tmOpenReceiveOtherSale(\''+s.id+'\')">Recibido</button>':''}
+               ${s.status==='active'&&s.receiveStatus==='Pendiente'&&tmCan('other_sales.cancel')
+                  ?'<button class="tm-os-cancel" onclick="tmOpenCancelOtherSale(\''+s.id+'\')">Anular</button>':''}
+             </div>
+           </td>
+         </tr>`).join('')}
+       </tbody>
+     </table>
+     </div>`;
+ }catch(e){
+   table.innerHTML='<div style="padding:20px;color:#b91c1c">'+esc(e.message)+'</div>';
+ }
+}
+
+function tmOpenOtherSale(){
+ if(!tmCan('other_sales.create'))return;
+ modal('Nueva venta',`
+   <div id="tmOtherSaleRows"></div>
+   <button type="button" class="secondary" onclick="tmAddOtherSaleRow()" style="margin:8px 0 16px">+ Agregar artículo</button>
+
+   <div class="tm-os-form-grid">
+     <label>Medio de pago
+       <select id="tmOtherPayment" onchange="tmCalcOtherSale()">
+         <option value="Efectivo">Efectivo</option>
+         <option value="Tarjeta">Tarjeta</option>
+       </select>
+     </label>
+     <label>IVA
+       <select id="tmOtherTax" onchange="tmCalcOtherSale()">
+         <option value="false">Sin IVA</option>
+         <option value="true">Con IVA 13%</option>
+       </select>
+     </label>
+   </div>
+
+   <div id="tmOtherSaleTotals" class="tm-os-totals"></div>
+
+   <div class="actions">
+     <button class="secondary" onclick="closeModal()">Cancelar</button>
+     <button class="primary" id="tmOtherSaveBtn" onclick="tmSaveOtherSale()">Guardar venta</button>
+   </div>
+ `);
+ tmAddOtherSaleRow();
+}
+
+function tmAddOtherSaleRow(){
+ const host=$('tmOtherSaleRows');
+ if(!host)return;
+ const row=document.createElement('div');
+ row.className='tm-os-item-row';
+ row.innerHTML=`
+   <label style="flex:2">Artículo / detalle
+     <input class="tm-os-desc" placeholder="Ej. Café, agua, cerveza" maxlength="250">
+   </label>
+   <label>Cantidad
+     <input class="tm-os-qty" type="number" min="0.01" step="0.01" value="1" oninput="tmCalcOtherSale()">
+   </label>
+   <label>Precio unitario
+     <input class="tm-os-price" type="number" min="0" step="0.01" value="0" oninput="tmCalcOtherSale()">
+   </label>
+   <button type="button" class="tm-os-remove" onclick="this.parentElement.remove();tmCalcOtherSale()">×</button>
+ `;
+ host.appendChild(row);
+ tmCalcOtherSale();
+}
+
+function tmReadOtherSaleItems(){
+ return [...document.querySelectorAll('.tm-os-item-row')].map(row=>({
+   description:row.querySelector('.tm-os-desc')?.value?.trim()||'',
+   quantity:Number(row.querySelector('.tm-os-qty')?.value||0),
+   unitPrice:Number(row.querySelector('.tm-os-price')?.value||0)
+ }));
+}
+
+function tmCalcOtherSale(){
+ const items=tmReadOtherSaleItems();
+ const subtotal=items.reduce((sum,x)=>sum+(Number(x.quantity||0)*Number(x.unitPrice||0)),0);
+ const withTax=$('tmOtherTax')?.value==='true';
+ const tax=withTax?subtotal*.13:0;
+ const total=subtotal+tax;
+ const box=$('tmOtherSaleTotals');
+ if(box)box.innerHTML=`
+   <div><span>Subtotal</span><b>${money(subtotal)}</b></div>
+   <div><span>IVA</span><b>${withTax?money(tax):'No aplica'}</b></div>
+   <div class="tm-os-grand"><span>Total</span><b>${money(total)}</b></div>
+ `;
+}
+
+async function tmSaveOtherSale(){
+ const btn=$('tmOtherSaveBtn');
+ const items=tmReadOtherSaleItems();
+ if(!items.length||items.some(x=>!x.description||x.quantity<=0||x.unitPrice<0)){
+   const box=$('tmOtherSaleTotals');
+   if(box)box.insertAdjacentHTML('beforeend','<div style="color:#b91c1c;margin-top:8px">Revise descripción, cantidad y precio de todos los artículos.</div>');
+   return;
+ }
+ try{
+   if(btn){btn.disabled=true;btn.textContent='Guardando...';}
+   const data=await tmOtherSalesApi('/api/other-sales',{
+     method:'POST',
+     body:JSON.stringify({
+       items,
+       taxApplied:$('tmOtherTax').value==='true',
+       paymentMethod:$('tmOtherPayment').value
+     })
+   });
+   tmOtherSalesData.unshift(data.sale);
+   tmPreviewOtherSaleObject(data.sale,true);
+ }catch(e){
+   if(btn){btn.disabled=false;btn.textContent='Guardar venta';}
+   const box=$('tmOtherSaleTotals');
+   if(box)box.insertAdjacentHTML('beforeend','<div style="color:#b91c1c;margin-top:8px">'+esc(e.message)+'</div>');
+ }
+}
+
+function tmOtherSaleDoc(s){
+ const items=(s.items||[]).map(item=>`
+   <div style="margin:7px 0">
+     <b>${esc(item.description)}</b><br>
+     ${Number(item.quantity||0)} × ${money(item.unitPrice)}
+     <span style="float:right">${money(Number(item.quantity||0)*Number(item.unitPrice||0))}</span>
+   </div>
+ `).join('');
+
+ return `<div class="ticket">
+   ${company('OTRA VENTA')}
+   <b>Venta:</b> ${esc(s.number)}<br>
+   <b>Fecha:</b> ${tmOtherDateTime(s.saleDate)}<br>
+   <b>Usuario:</b> ${esc(s.createdBy||TM_AUTH?.user?.name||'')}<br>
+   <b>Medio de pago:</b> ${esc(s.paymentMethod)}<br>
+   <b>Control:</b> ${esc(s.receiveStatus||'Pendiente')}
+   <hr>
+   ${items}
+   <hr>
+   Subtotal <span style="float:right">${money(s.subtotal)}</span><br>
+   ${s.taxApplied
+      ?'IVA 13% <span style="float:right">'+money(s.tax)+'</span>'
+      :'IVA: No aplica'}
+   <br><br>
+   <b>TOTAL <span style="float:right">${money(s.total)}</span></b>
+   ${s.status==='cancelled'?'<hr><b>*** ANULADA ***</b>':''}
+ </div>`;
+}
+
+function tmPreviewOtherSale(id){
+ const s=tmOtherSalesData.find(x=>x.id===id);
+ if(s)tmPreviewOtherSaleObject(s,false);
+}
+
+function tmPreviewOtherSaleObject(s,created){
+ modal(created?'Venta '+s.number+' creada':'Venta '+s.number,`
+   <div class="preview">${tmOtherSaleDoc(s)}</div>
+   <div class="actions">
+     <button class="secondary" onclick="closeModal();if(view==='otherSales')renderOtherSales()">Cerrar</button>
+     <button class="primary" onclick="printRaw(tmOtherSaleDoc(tmOtherSalesData.find(x=>x.id==='${s.id}')||${JSON.stringify(s)}))">Imprimir</button>
+   </div>
+ `);
+}
+
+function tmOpenReceiveOtherSale(id){
+ const s=tmOtherSalesData.find(x=>x.id===id);
+ if(!s)return;
+ modal('Confirmar dinero recibido',`
+   <p>Vas a marcar <b>${esc(s.number)}</b> por <b>${money(s.total)}</b> como <b>Recibido</b>.</p>
+   <p style="color:#64748b">Esta confirmación quedará registrada con tu usuario, fecha y hora.</p>
+   <label>Observación (opcional)
+     <textarea id="tmOtherReceiveNote" rows="3" maxlength="1000" style="width:100%;margin-top:6px"></textarea>
+   </label>
+   <div class="actions">
+     <button class="secondary" onclick="closeModal()">Cancelar</button>
+     <button class="primary" onclick="tmReceiveOtherSale('${id}')">Confirmar recibido</button>
+   </div>
+ `);
+}
+
+async function tmReceiveOtherSale(id){
+ try{
+   await tmOtherSalesApi('/api/other-sales/'+id+'/receive',{
+     method:'PATCH',
+     body:JSON.stringify({note:$('tmOtherReceiveNote')?.value||''})
+   });
+   closeModal();
+   await renderOtherSales();
+ }catch(e){
+   const box=$('modalBox');
+   if(box)box.insertAdjacentHTML('beforeend','<div style="color:#b91c1c;margin-top:10px">'+esc(e.message)+'</div>');
+ }
+}
+
+function tmOpenCancelOtherSale(id){
+ const s=tmOtherSalesData.find(x=>x.id===id);
+ if(!s)return;
+ modal('Anular '+s.number,`
+   <p>La venta quedará en el historial como <b>ANULADA</b>. No será eliminada.</p>
+   <label>Motivo de anulación
+     <textarea id="tmOtherCancelReason" rows="3" maxlength="1000" style="width:100%;margin-top:6px"></textarea>
+   </label>
+   <div class="actions">
+     <button class="secondary" onclick="closeModal()">Cancelar</button>
+     <button style="background:#b91c1c;color:white" onclick="tmCancelOtherSale('${id}')">Anular venta</button>
+   </div>
+ `);
+}
+
+async function tmCancelOtherSale(id){
+ const reason=$('tmOtherCancelReason')?.value?.trim()||'';
+ if(!reason)return;
+ try{
+   await tmOtherSalesApi('/api/other-sales/'+id+'/cancel',{
+     method:'POST',
+     body:JSON.stringify({reason})
+   });
+   closeModal();
+   await renderOtherSales();
+ }catch(e){
+   const box=$('modalBox');
+   if(box)box.insertAdjacentHTML('beforeend','<div style="color:#b91c1c;margin-top:10px">'+esc(e.message)+'</div>');
+ }
+}
+
+
 async function init(){try{db=await loadDB();appReady=true;render()}catch(e){console.error(e);document.getElementById('app').innerHTML='<div class="card"><h2>No se pudo conectar con la base de datos</h2><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Reintentar</button></div>'}}
 </script>
 
@@ -11280,33 +11660,32 @@ const catalog=[
 ['Órdenes de compra','purchase_orders',['view','create','edit','delete']],
 ['Ventas','sales',['view','create','edit','delete']],
 ['Pagos','payments',['view','create','edit','delete']],
+['Otras ventas','other_sales',['view','create','receive','cancel']],
 ['Reportes','reports',['service_dates.view','sellers.view','sales_analysis.view','best_sellers.view']],
 ['Usuarios','users',['view','create','edit','delete']],
 ['Configuración','settings',['view','edit']]
 ];
 const labels={view:'Ver',create:'Crear',edit:'Editar',delete:'Eliminar',
 'service_dates.view':'Tours por fecha','sellers.view':'Vendedores / comisiones',
-'sales_analysis.view':'Análisis de ventas','best_sellers.view':'Más vendidos'};
+'sales_analysis.view':'Análisis de ventas','best_sellers.view':'Más vendidos',
+receive:'Recibido',cancel:'Anular'};
 const $=id=>document.getElementById(id);
 async function api(url,opt){const r=await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opt||{}));const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Error de servidor');return d}
 function renderPermissions(selected=[]){
  const s=new Set(selected);
  $('tm-permissions-grid').innerHTML=catalog.map(([title,prefix,acts])=>{
-  const report=prefix==='reports';
-  if(report) return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
-   acts.map(a=>{let p=prefix+'.'+a;return '<label class="tm-prow"><span>'+labels[a]+'</span><span></span><span><input type="checkbox" data-perm="'+p+'" '+(s.has(p)?'checked':'')+'></span><span></span><span></span></label>'}).join('')+'</div>';
+  if(prefix==='reports'){
+    return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
+      acts.map(a=>{let p=prefix+'.'+a;return '<label class="tm-prow"><span>'+labels[a]+'</span><span></span><span><input type="checkbox" data-perm="'+p+'" '+(s.has(p)?'checked':'')+'></span><span></span><span></span></label>'}).join('')+'</div>';
+  }
+  const headers=prefix==='other_sales'
+    ?['Ver','Crear','Recibido','Anular']
+    :['Ver','Crear','Editar','Eliminar'];
   return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
-   '<div class="tm-prow" style="font-weight:600"><span></span><span>Ver</span><span>Crear</span><span>Editar</span><span>Eliminar</span></div>'+
-   acts.map(a=>'<label class="tm-prow"><span>'+title+'</span><span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span><span></span><span></span><span></span></label>').join('')+
-   '</div>';
+    '<div class="tm-prow" style="font-weight:600"><span></span>'+headers.map(x=>'<span>'+x+'</span>').join('')+'</div>'+
+    '<div class="tm-prow"><span>Permisos</span>'+acts.map(a=>'<span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span>').join('')+'</div>'+
+    '</div>';
  }).join('');
- // For CRUD modules, one row per action would be confusing; replace with proper matrix.
- document.querySelectorAll('.tm-pgroup').forEach((g,i)=>{
-  if(i===7) return;
-  const [title,prefix,acts]=catalog[i];
-  g.innerHTML='<div class="tm-ptitle">'+title+'</div><div class="tm-prow" style="font-weight:600"><span></span><span>Ver</span><span>Crear</span><span>Editar</span><span>Eliminar</span></div>'+
-   '<div class="tm-prow"><span>Permisos</span>'+acts.map(a=>'<span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span>').join('')+'</div>';
- });
 }
 async function loadUsers(){
  const d=await api('/api/users');
