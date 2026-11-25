@@ -1238,6 +1238,23 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .tm-os-totals{margin:12px 0;background:#f8fafc;border-radius:10px;padding:12px}.tm-os-totals>div{display:flex;justify-content:space-between;padding:4px 0}
 .tm-os-grand{font-size:18px;border-top:1px solid #cbd5e1;margin-top:5px;padding-top:9px!important}
 @media(max-width:900px){.tm-os-cards{grid-template-columns:1fr 1fr}.tm-os-item-row{flex-wrap:wrap}.tm-os-head{flex-direction:column}}
+
+.tm-os-new-wrap{max-width:980px;margin:auto}
+.tm-os-new-top{margin-top:-4px}
+.tm-os-mini-label{font-size:11px;letter-spacing:.14em;font-weight:800;color:#0f766e;margin-bottom:5px}
+.tm-os-item-row{display:grid;grid-template-columns:minmax(320px,2.4fr) 120px 170px 38px;gap:10px;align-items:end;padding:8px 0}
+.tm-os-item-desc,.tm-os-item-qty,.tm-os-item-price{min-width:0}
+.tm-os-add{margin:7px 0 12px;padding:8px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:8px}
+.tm-os-options{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:12px;align-items:stretch;margin:4px 0 12px}
+.tm-os-options>label{display:flex;flex-direction:column;gap:5px;font-weight:700;color:#334155}
+.tm-os-options select{height:40px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+.tm-os-tax-check{flex-direction:row!important;align-items:center!important;gap:10px!important;border:1px solid #cbd5e1;border-radius:10px;padding:9px 11px;background:#f8fafc;cursor:pointer}
+.tm-os-tax-check input{width:19px;height:19px;accent-color:#0f766e}
+.tm-os-tax-check span{display:flex;flex-direction:column;line-height:1.15}.tm-os-tax-check small{font-weight:400;color:#64748b;margin-top:3px}
+.tm-os-totals{padding:10px 12px;margin:8px 0 10px}.tm-os-totals>div{padding:3px 0}
+.tm-os-bottom-actions{margin-top:8px}
+@media(max-width:900px){.tm-os-options{grid-template-columns:1fr}.tm-os-item-row{grid-template-columns:1fr 90px 120px 38px}}
+@media(max-width:620px){.tm-os-item-row{grid-template-columns:1fr 1fr}.tm-os-item-desc{grid-column:1/-1}.tm-os-remove{align-self:end}.tm-os-options{grid-template-columns:1fr}}
 </style>
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
@@ -11308,6 +11325,28 @@ function tmOtherDateTime(v){
  });
 }
 
+function tmOtherMoney(value,currency='USD'){
+ const n=Number(value||0);
+ return currency==='CRC'
+   ?'₡'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})
+   :'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function tmOtherTotalsByCurrency(rows){
+ return rows.reduce((out,x)=>{
+   const c=x.currency||'USD';
+   out[c]=(out[c]||0)+Number(x.total||0);
+   return out;
+ },{});
+}
+
+function tmOtherFormatCurrencyTotals(totals){
+ const order=['USD','CRC'];
+ return order.filter(c=>totals[c]!=null)
+   .map(c=>tmOtherMoney(totals[c],c))
+   .join(' · ') || '$0.00';
+}
+
 function tmOtherItemsLabel(s){
  const items=Array.isArray(s.items)?s.items:[];
  if(!items.length)return '-';
@@ -11333,18 +11372,18 @@ async function renderOtherSales(){
    const active=tmOtherSalesData.filter(x=>x.status==='active');
    const pending=active.filter(x=>x.receiveStatus==='Pendiente');
    const received=active.filter(x=>x.receiveStatus==='Recibido');
-   const total=active.reduce((a,x)=>a+Number(x.total||0),0);
-   const pendingTotal=pending.reduce((a,x)=>a+Number(x.total||0),0);
-   const receivedTotal=received.reduce((a,x)=>a+Number(x.total||0),0);
-   const cash=active.filter(x=>x.paymentMethod==='Efectivo').reduce((a,x)=>a+Number(x.total||0),0);
-   const card=active.filter(x=>x.paymentMethod==='Tarjeta').reduce((a,x)=>a+Number(x.total||0),0);
+   const total=tmOtherTotalsByCurrency(active);
+   const pendingTotal=tmOtherTotalsByCurrency(pending);
+   const receivedTotal=tmOtherTotalsByCurrency(received);
+   const cash=tmOtherTotalsByCurrency(active.filter(x=>x.paymentMethod==='Efectivo'));
+   const card=tmOtherTotalsByCurrency(active.filter(x=>x.paymentMethod==='Tarjeta'));
 
    summary.innerHTML=`
      <div class="tm-os-cards">
-       <div class="tm-os-card"><span>Total facturado</span><strong>${money(total)}</strong><small>${active.length} venta${active.length===1?'':'s'}</small></div>
-       <div class="tm-os-card"><span>Recibido</span><strong>${money(receivedTotal)}</strong><small>${received.length} confirmada${received.length===1?'':'s'}</small></div>
-       <div class="tm-os-card tm-os-pending"><span>Pendiente</span><strong>${money(pendingTotal)}</strong><small>${pending.length} por revisar</small></div>
-       <div class="tm-os-card"><span>Medios de pago</span><strong style="font-size:18px">Efectivo ${money(cash)}</strong><small>Tarjeta ${money(card)}</small></div>
+       <div class="tm-os-card"><span>Total facturado</span><strong>${tmOtherFormatCurrencyTotals(total)}</strong><small>${active.length} venta${active.length===1?'':'s'}</small></div>
+       <div class="tm-os-card"><span>Recibido</span><strong>${tmOtherFormatCurrencyTotals(receivedTotal)}</strong><small>${received.length} confirmada${received.length===1?'':'s'}</small></div>
+       <div class="tm-os-card tm-os-pending"><span>Pendiente</span><strong>${tmOtherFormatCurrencyTotals(pendingTotal)}</strong><small>${pending.length} por revisar</small></div>
+       <div class="tm-os-card"><span>Medios de pago</span><strong style="font-size:16px">Efectivo ${tmOtherFormatCurrencyTotals(cash)}</strong><small>Tarjeta ${tmOtherFormatCurrencyTotals(card)}</small></div>
      </div>`;
 
    if(!tmOtherSalesData.length){
@@ -11367,9 +11406,9 @@ async function renderOtherSales(){
            <td>${esc(s.createdBy||'-')}</td>
            <td>${tmOtherItemsLabel(s)}</td>
            <td>${esc(s.paymentMethod)}</td>
-           <td>${money(s.subtotal)}</td>
-           <td>${s.taxApplied?money(s.tax):'Sin IVA'}</td>
-           <td><b>${money(s.total)}</b></td>
+           <td>${tmOtherMoney(s.subtotal,s.currency)}</td>
+           <td>${s.taxApplied?tmOtherMoney(s.tax,s.currency):'Sin IVA'}</td>
+           <td><b>${tmOtherMoney(s.total,s.currency)}</b></td>
            <td>
              ${s.status==='cancelled'
                ?'<span class="tm-os-badge cancelled">Anulada</span>'
@@ -11398,50 +11437,65 @@ async function renderOtherSales(){
 function tmOpenOtherSale(){
  if(!tmCan('other_sales.create'))return;
  modal('Nueva venta',`
-   <div id="tmOtherSaleRows"></div>
-   <button type="button" class="secondary" onclick="tmAddOtherSaleRow()" style="margin:8px 0 16px">+ Agregar artículo</button>
+   <div class="tm-os-new-wrap">
+     <div class="tm-os-new-top">
+       <div>
+         <div class="tm-os-mini-label">DETALLE DE VENTA</div>
+         <div id="tmOtherSaleRows"></div>
+         <button type="button" class="tm-os-add" onclick="tmAddOtherSaleRow()">+ Agregar artículo</button>
+       </div>
+     </div>
 
-   <div class="tm-os-form-grid">
-     <label>Medio de pago
-       <select id="tmOtherPayment" onchange="tmCalcOtherSale()">
-         <option value="Efectivo">Efectivo</option>
-         <option value="Tarjeta">Tarjeta</option>
-       </select>
-     </label>
-     <label>IVA
-       <select id="tmOtherTax" onchange="tmCalcOtherSale()">
-         <option value="false">Sin IVA</option>
-         <option value="true">Con IVA 13%</option>
-       </select>
-     </label>
-   </div>
+     <div class="tm-os-options">
+       <label>Medio de pago
+         <select id="tmOtherPayment">
+           <option value="Efectivo">Efectivo</option>
+           <option value="Tarjeta">Tarjeta</option>
+         </select>
+       </label>
 
-   <div id="tmOtherSaleTotals" class="tm-os-totals"></div>
+       <label>Moneda
+         <select id="tmOtherCurrency" onchange="tmCalcOtherSale()">
+           <option value="USD">Dólares (USD)</option>
+           <option value="CRC">Colones (CRC)</option>
+         </select>
+       </label>
 
-   <div class="actions">
-     <button class="secondary" onclick="closeModal()">Cancelar</button>
-     <button class="primary" id="tmOtherSaveBtn" onclick="tmSaveOtherSale()">Guardar venta</button>
+       <label class="tm-os-tax-check">
+         <input id="tmOtherTax" type="checkbox" onchange="tmCalcOtherSale()">
+         <span>
+           <b>Aplicar IVA 13%</b>
+           <small>Actívalo si esta venta lleva IVA</small>
+         </span>
+       </label>
+     </div>
+
+     <div id="tmOtherSaleTotals" class="tm-os-totals"></div>
+
+     <div class="actions tm-os-bottom-actions">
+       <button class="secondary" onclick="closeModal()">Cancelar</button>
+       <button class="primary" id="tmOtherSaveBtn" onclick="tmSaveOtherSale()">Guardar venta</button>
+     </div>
    </div>
  `);
  tmAddOtherSaleRow();
 }
-
 function tmAddOtherSaleRow(){
  const host=$('tmOtherSaleRows');
  if(!host)return;
  const row=document.createElement('div');
  row.className='tm-os-item-row';
  row.innerHTML=`
-   <label style="flex:2">Artículo / detalle
+   <label class="tm-os-item-desc">Artículo / detalle
      <input class="tm-os-desc" placeholder="Ej. Café, agua, cerveza" maxlength="250">
    </label>
-   <label>Cantidad
+   <label class="tm-os-item-qty">Cantidad
      <input class="tm-os-qty" type="number" min="0.01" step="0.01" value="1" oninput="tmCalcOtherSale()">
    </label>
-   <label>Precio unitario
+   <label class="tm-os-item-price">Precio unitario
      <input class="tm-os-price" type="number" min="0" step="0.01" value="0" oninput="tmCalcOtherSale()">
    </label>
-   <button type="button" class="tm-os-remove" onclick="this.parentElement.remove();tmCalcOtherSale()">×</button>
+   <button type="button" class="tm-os-remove" title="Eliminar artículo" onclick="this.parentElement.remove();tmCalcOtherSale()">×</button>
  `;
  host.appendChild(row);
  tmCalcOtherSale();
@@ -11458,14 +11512,15 @@ function tmReadOtherSaleItems(){
 function tmCalcOtherSale(){
  const items=tmReadOtherSaleItems();
  const subtotal=items.reduce((sum,x)=>sum+(Number(x.quantity||0)*Number(x.unitPrice||0)),0);
- const withTax=$('tmOtherTax')?.value==='true';
+ const withTax=!!$('tmOtherTax')?.checked;
+ const currency=$('tmOtherCurrency')?.value||'USD';
  const tax=withTax?subtotal*.13:0;
  const total=subtotal+tax;
  const box=$('tmOtherSaleTotals');
  if(box)box.innerHTML=`
-   <div><span>Subtotal</span><b>${money(subtotal)}</b></div>
-   <div><span>IVA</span><b>${withTax?money(tax):'No aplica'}</b></div>
-   <div class="tm-os-grand"><span>Total</span><b>${money(total)}</b></div>
+   <div><span>Subtotal</span><b>${tmOtherMoney(subtotal,currency)}</b></div>
+   <div><span>IVA</span><b>${withTax?tmOtherMoney(tax,currency):'No aplica'}</b></div>
+   <div class="tm-os-grand"><span>Total</span><b>${tmOtherMoney(total,currency)}</b></div>
  `;
 }
 
@@ -11483,8 +11538,9 @@ async function tmSaveOtherSale(){
      method:'POST',
      body:JSON.stringify({
        items,
-       taxApplied:$('tmOtherTax').value==='true',
-       paymentMethod:$('tmOtherPayment').value
+       taxApplied:!!$('tmOtherTax').checked,
+       paymentMethod:$('tmOtherPayment').value,
+       currency:$('tmOtherCurrency').value
      })
    });
    tmOtherSalesData.unshift(data.sale);
@@ -11500,8 +11556,8 @@ function tmOtherSaleDoc(s){
  const items=(s.items||[]).map(item=>`
    <div style="margin:7px 0">
      <b>${esc(item.description)}</b><br>
-     ${Number(item.quantity||0)} × ${money(item.unitPrice)}
-     <span style="float:right">${money(Number(item.quantity||0)*Number(item.unitPrice||0))}</span>
+     ${Number(item.quantity||0)} × ${tmOtherMoney(item.unitPrice,s.currency)}
+     <span style="float:right">${tmOtherMoney(Number(item.quantity||0)*Number(item.unitPrice||0),s.currency)}</span>
    </div>
  `).join('');
 
@@ -11511,16 +11567,17 @@ function tmOtherSaleDoc(s){
    <b>Fecha:</b> ${tmOtherDateTime(s.saleDate)}<br>
    <b>Usuario:</b> ${esc(s.createdBy||TM_AUTH?.user?.name||'')}<br>
    <b>Medio de pago:</b> ${esc(s.paymentMethod)}<br>
+   <b>Moneda:</b> ${s.currency==='CRC'?'Colones (CRC)':'Dólares (USD)'}<br>
    <b>Control:</b> ${esc(s.receiveStatus||'Pendiente')}
    <hr>
    ${items}
    <hr>
-   Subtotal <span style="float:right">${money(s.subtotal)}</span><br>
+   Subtotal <span style="float:right">${tmOtherMoney(s.subtotal,s.currency)}</span><br>
    ${s.taxApplied
-      ?'IVA 13% <span style="float:right">'+money(s.tax)+'</span>'
+      ?'IVA 13% <span style="float:right">'+tmOtherMoney(s.tax,s.currency)+'</span>'
       :'IVA: No aplica'}
    <br><br>
-   <b>TOTAL <span style="float:right">${money(s.total)}</span></b>
+   <b>TOTAL <span style="float:right">${tmOtherMoney(s.total,s.currency)}</span></b>
    ${s.status==='cancelled'?'<hr><b>*** ANULADA ***</b>':''}
  </div>`;
 }
@@ -11549,7 +11606,7 @@ function tmOpenReceiveOtherSale(id){
  const s=tmOtherSalesData.find(x=>x.id===id);
  if(!s)return;
  modal('Confirmar dinero recibido',`
-   <p>Vas a marcar <b>${esc(s.number)}</b> por <b>${money(s.total)}</b> como <b>Recibido</b>.</p>
+   <p>Vas a marcar <b>${esc(s.number)}</b> por <b>${tmOtherMoney(s.total,s.currency)}</b> como <b>Recibido</b>.</p>
    <p style="color:#64748b">Esta confirmación quedará registrada con tu usuario, fecha y hora.</p>
    <label>Observación (opcional)
      <textarea id="tmOtherReceiveNote" rows="3" maxlength="1000" style="width:100%;margin-top:6px"></textarea>
