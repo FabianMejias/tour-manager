@@ -1387,6 +1387,7 @@ app.get('/api/other-sales', async (req, res) => {
         os.tax_amount,
         os.total,
         os.payment_method,
+        os.currency,
         os.status,
         os.receive_status,
         os.received_at,
@@ -1448,6 +1449,7 @@ app.get('/api/other-sales', async (req, res) => {
         tax: Number(x.tax_amount || 0),
         total: Number(x.total || 0),
         paymentMethod: x.payment_method,
+        currency: x.currency || 'USD',
         status: x.status,
         receiveStatus: x.receive_status,
         receivedAt: x.received_at,
@@ -1476,7 +1478,11 @@ app.post('/api/other-sales', async (req, res) => {
   const d = req.body || {};
   const items = Array.isArray(d.items) ? d.items : [];
   const paymentMethod = String(d.paymentMethod || '').trim();
+  const currency = String(d.currency || 'USD').trim().toUpperCase();
   const taxApplied = !!d.taxApplied;
+
+  if (!['USD', 'CRC'].includes(currency))
+    return res.status(400).json({ error: 'Seleccione dólares o colones.' });
 
   if (!['Efectivo', 'Tarjeta'].includes(paymentMethod))
     return res.status(400).json({ error: 'Seleccione Efectivo o Tarjeta.' });
@@ -1547,13 +1553,14 @@ app.post('/api/other-sales', async (req, res) => {
         tax_amount,
         total,
         payment_method,
+        currency,
         status,
         receive_status,
         created_by_user_id
       )
       VALUES(
-        $1,$2,NOW(),$3,$4,$5,$6,$7,$8,
-        'active','Pendiente',$9
+        $1,$2,NOW(),$3,$4,$5,$6,$7,$8,$9,
+        'active','Pendiente',$10
       )
     `, [
       id,
@@ -1564,6 +1571,7 @@ app.post('/api/other-sales', async (req, res) => {
       tax,
       total,
       paymentMethod,
+      currency,
       req.session.user.id
     ]);
 
@@ -1603,6 +1611,7 @@ app.post('/api/other-sales', async (req, res) => {
         tax,
         total,
         paymentMethod,
+        currency,
         status: 'active',
         receiveStatus: 'Pendiente',
         createdBy: req.session.user.name || '',
@@ -1762,6 +1771,11 @@ otherSalesReady = (async () => {
         CONSTRAINT other_sales_receive_status
           CHECK (receive_status IN ('Pendiente','Recibido'))
       )
+    `);
+
+    await pool.query(`
+      ALTER TABLE other_sales
+      ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'USD'
     `);
 
     await pool.query(`
