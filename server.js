@@ -32,6 +32,7 @@ const TM_PERMISSIONS = [
   'purchase_orders.view','purchase_orders.create','purchase_orders.edit','purchase_orders.delete',
   'sales.view','sales.create','sales.edit','sales.delete',
   'payments.view','payments.create','payments.edit','payments.delete',
+  'other_sales.view','other_sales.create','other_sales.receive','other_sales.cancel',
   'reports.service_dates.view',
   'reports.sellers.view',
   'reports.sales_analysis.view',
@@ -1324,6 +1325,398 @@ app.delete('/api/purchase-orders/:id', async (req, res) => {
 });
 
 
+
+// ============================================================
+// OTRAS VENTAS - FACTURACION AUXILIAR DE RECEPCION
+// Modulo completamente independiente de Tours / OCs / ventas.
+// ============================================================
+
+let otherSalesReady = Promise.resolve();
+
+function tmMoneyRound(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+app.get('/api/other-sales', async (req, res) => {
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'other_sales.view')))
+    return res.status(403).json({ error: 'No tiene permiso para ver Otras ventas.' });
+
+  try {
+    await otherSalesReady;
+
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || ''))
+      ? String(req.query.from)
+      : null;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || ''))
+      ? String(req.query.to)
+      : null;
+    const receiveStatus =
+      req.query.receiveStatus === 'Pendiente' || req.query.receiveStatus === 'Recibido'
+        ? req.query.receiveStatus
+        : null;
+
+    const values = [];
+    const where = [];
+
+    if (from) {
+      values.push(from);
+      where.push(`os.sale_date >= $${values.length}::date`);
+    }
+
+    if (to) {
+      values.push(to);
+      where.push(`os.sale_date < ($${values.length}::date + INTERVAL '1 day')`);
+    }
+
+    if (receiveStatus) {
+      values.push(receiveStatus);
+      where.push(`os.receive_status = $${values.length}`);
+    }
+
+    const r = await pool.query(`
+      SELECT
+        os.id,
+        os.number,
+        os.sale_date,
+        os.tax_applied,
+        os.tax_rate,
+        os.subtotal,
+        os.tax_amount,
+        os.total,
+        os.payment_method,
+        os.status,
+        os.receive_status,
+        os.received_at,
+        os.receive_note,
+        os.cancelled_at,
+        os.cancellation_reason,
+        cu.name AS created_by_name,
+        ru.name AS received_by_name,
+        xu.name AS cancelled_by_name
+      FROM other_sales os
+      LEFT JOIN users cu ON cu.id=os.created_by_user_id
+      LEFT JOIN users ru ON ru.id=os.received_by_user_id
+      LEFT JOIN users xu ON xu.id=os.cancelled_by_user_id
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY
+        CAST(SUBSTRING(os.number FROM 4) AS INTEGER) DESC
+    `, values);
+
+    if (!r.rows.length) {
+      return res.json({ sales: [] });
+    }
+
+    const ids = r.rows.map(x => x.id);
+    const itemRows = await pool.query(`
+      SELECT
+        id,
+        other_sale_id,
+        description,
+        quantity,
+        unit_price,
+        subtotal,
+        position
+      FROM other_sale_items
+      WHERE other_sale_id::text = ANY($1::text[])
+      ORDER BY other_sale_id, position, created_at
+    `, [ids]);
+
+    const bySale = {};
+    for (const item of itemRows.rows) {
+      if (!bySale[item.other_sale_id]) bySale[item.other_sale_id] = [];
+      bySale[item.other_sale_id].push({
+        id: item.id,
+        description: item.description,
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unit_price || 0),
+        subtotal: Number(item.subtotal || 0),
+        position: Number(item.position || 0)
+      });
+    }
+
+    res.json({
+      sales: r.rows.map(x => ({
+        id: x.id,
+        number: x.number,
+        saleDate: x.sale_date,
+        taxApplied: !!x.tax_applied,
+        taxRate: Number(x.tax_rate || 0),
+        subtotal: Number(x.subtotal || 0),
+        tax: Number(x.tax_amount || 0),
+        total: Number(x.total || 0),
+        paymentMethod: x.payment_method,
+        status: x.status,
+        receiveStatus: x.receive_status,
+        receivedAt: x.received_at,
+        receiveNote: x.receive_note || '',
+        cancelledAt: x.cancelled_at,
+        cancellationReason: x.cancellation_reason || '',
+        createdBy: x.created_by_name || '',
+        receivedBy: x.received_by_name || '',
+        cancelledBy: x.cancelled_by_name || '',
+        items: bySale[x.id] || []
+      }))
+    });
+  } catch (e) {
+    console.error('Error leyendo Otras ventas:', e);
+    res.status(500).json({ error: 'No fue posible cargar Otras ventas.' });
+  }
+});
+
+app.post('/api/other-sales', async (req, res) => {
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'other_sales.create')))
+    return res.status(403).json({ error: 'No tiene permiso para crear Otras ventas.' });
+
+  const d = req.body || {};
+  const items = Array.isArray(d.items) ? d.items : [];
+  const paymentMethod = String(d.paymentMethod || '').trim();
+  const taxApplied = !!d.taxApplied;
+
+  if (!['Efectivo', 'Tarjeta'].includes(paymentMethod))
+    return res.status(400).json({ error: 'Seleccione Efectivo o Tarjeta.' });
+
+  if (!items.length || items.length > 100)
+    return res.status(400).json({ error: 'Debe agregar al menos un artículo.' });
+
+  const cleanItems = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const description = String(items[i]?.description || '').trim();
+    const quantity = Number(items[i]?.quantity || 0);
+    const unitPrice = Number(items[i]?.unitPrice || 0);
+
+    if (!description || description.length > 250)
+      return res.status(400).json({ error: 'Cada artículo debe tener una descripción válida.' });
+
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000)
+      return res.status(400).json({ error: 'La cantidad de cada artículo debe ser mayor que cero.' });
+
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 100000000)
+      return res.status(400).json({ error: 'Revise el precio unitario de los artículos.' });
+
+    const lineSubtotal = tmMoneyRound(quantity * unitPrice);
+
+    cleanItems.push({
+      id: require('crypto').randomUUID(),
+      description,
+      quantity,
+      unitPrice: tmMoneyRound(unitPrice),
+      subtotal: lineSubtotal,
+      position: i
+    });
+  }
+
+  const subtotal = tmMoneyRound(
+    cleanItems.reduce((sum, item) => sum + item.subtotal, 0)
+  );
+  const taxRate = taxApplied ? 13 : 0;
+  const tax = taxApplied ? tmMoneyRound(subtotal * 0.13) : 0;
+  const total = tmMoneyRound(subtotal + tax);
+
+  const client = await pool.connect();
+
+  try {
+    await otherSalesReady;
+    await client.query('BEGIN');
+
+    await client.query(
+      "INSERT INTO sequences(code,current_value) VALUES('OV',0) ON CONFLICT(code) DO NOTHING"
+    );
+
+    const seq = await client.query(
+      "UPDATE sequences SET current_value=current_value+1 WHERE code='OV' RETURNING current_value"
+    );
+
+    const number = 'OV-' + String(seq.rows[0].current_value);
+    const id = require('crypto').randomUUID();
+
+    await client.query(`
+      INSERT INTO other_sales(
+        id,
+        number,
+        sale_date,
+        tax_applied,
+        tax_rate,
+        subtotal,
+        tax_amount,
+        total,
+        payment_method,
+        status,
+        receive_status,
+        created_by_user_id
+      )
+      VALUES(
+        $1,$2,NOW(),$3,$4,$5,$6,$7,$8,
+        'active','Pendiente',$9
+      )
+    `, [
+      id,
+      number,
+      taxApplied,
+      taxRate,
+      subtotal,
+      tax,
+      total,
+      paymentMethod,
+      req.session.user.id
+    ]);
+
+    for (const item of cleanItems) {
+      await client.query(`
+        INSERT INTO other_sale_items(
+          id,
+          other_sale_id,
+          description,
+          quantity,
+          unit_price,
+          subtotal,
+          position
+        )
+        VALUES($1,$2,$3,$4,$5,$6,$7)
+      `, [
+        item.id,
+        id,
+        item.description,
+        item.quantity,
+        item.unitPrice,
+        item.subtotal,
+        item.position
+      ]);
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      sale: {
+        id,
+        number,
+        saleDate: new Date().toISOString(),
+        taxApplied,
+        taxRate,
+        subtotal,
+        tax,
+        total,
+        paymentMethod,
+        status: 'active',
+        receiveStatus: 'Pendiente',
+        createdBy: req.session.user.name || '',
+        items: cleanItems
+      }
+    });
+
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Error creando Otra venta:', e);
+    res.status(500).json({ error: 'No fue posible crear la venta.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/other-sales/:id/receive', async (req, res) => {
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'other_sales.receive')))
+    return res.status(403).json({
+      error: 'No tiene permiso para confirmar dinero recibido.'
+    });
+
+  const note = String(req.body?.note || '').trim();
+
+  if (note.length > 1000)
+    return res.status(400).json({ error: 'La observación es demasiado extensa.' });
+
+  try {
+    await otherSalesReady;
+
+    const r = await pool.query(`
+      UPDATE other_sales
+      SET
+        receive_status='Recibido',
+        received_by_user_id=$1,
+        received_at=NOW(),
+        receive_note=$2,
+        updated_at=NOW()
+      WHERE id=$3
+        AND status='active'
+        AND receive_status='Pendiente'
+      RETURNING id,number,total,payment_method,receive_status,received_at
+    `, [
+      req.session.user.id,
+      note || null,
+      req.params.id
+    ]);
+
+    if (!r.rows.length)
+      return res.status(409).json({
+        error: 'La venta ya fue recibida, está anulada o cambió de estado.'
+      });
+
+    res.json({
+      ok: true,
+      sale: r.rows[0]
+    });
+
+  } catch (e) {
+    console.error('Error confirmando Otra venta:', e);
+    res.status(500).json({ error: 'No fue posible confirmar el dinero recibido.' });
+  }
+});
+
+app.post('/api/other-sales/:id/cancel', async (req, res) => {
+  if (!req.session.user)
+    return res.status(401).json({ error: 'No autenticado.' });
+
+  if (!(await tmHasPermission(req, 'other_sales.cancel')))
+    return res.status(403).json({ error: 'No tiene permiso para anular Otras ventas.' });
+
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!reason || reason.length > 1000)
+    return res.status(400).json({ error: 'Indique el motivo de la anulación.' });
+
+  try {
+    await otherSalesReady;
+
+    const r = await pool.query(`
+      UPDATE other_sales
+      SET
+        status='cancelled',
+        cancelled_by_user_id=$1,
+        cancelled_at=NOW(),
+        cancellation_reason=$2,
+        updated_at=NOW()
+      WHERE id=$3
+        AND status='active'
+        AND receive_status='Pendiente'
+      RETURNING id,number
+    `, [
+      req.session.user.id,
+      reason,
+      req.params.id
+    ]);
+
+    if (!r.rows.length)
+      return res.status(409).json({
+        error: 'Solo se pueden anular ventas activas que todavía estén Pendientes.'
+      });
+
+    res.json({ ok: true, sale: r.rows[0] });
+
+  } catch (e) {
+    console.error('Error anulando Otra venta:', e);
+    res.status(500).json({ error: 'No fue posible anular la venta.' });
+  }
+});
+
+
 const port = process.env.PORT || 3000;
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -1336,6 +1729,77 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
+
+// Estructura independiente para Otras ventas.
+otherSalesReady = (async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS other_sales (
+        id UUID PRIMARY KEY,
+        number TEXT NOT NULL UNIQUE,
+        sale_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        tax_applied BOOLEAN NOT NULL DEFAULT FALSE,
+        tax_rate NUMERIC(7,4) NOT NULL DEFAULT 0,
+        subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+        tax_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+        total NUMERIC(14,2) NOT NULL DEFAULT 0,
+        payment_method TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        receive_status TEXT NOT NULL DEFAULT 'Pendiente',
+        created_by_user_id UUID REFERENCES users(id),
+        received_by_user_id UUID REFERENCES users(id),
+        received_at TIMESTAMPTZ,
+        receive_note TEXT,
+        cancelled_by_user_id UUID REFERENCES users(id),
+        cancelled_at TIMESTAMPTZ,
+        cancellation_reason TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT other_sales_payment_method
+          CHECK (payment_method IN ('Efectivo','Tarjeta')),
+        CONSTRAINT other_sales_status
+          CHECK (status IN ('active','cancelled')),
+        CONSTRAINT other_sales_receive_status
+          CHECK (receive_status IN ('Pendiente','Recibido'))
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS other_sale_items (
+        id UUID PRIMARY KEY,
+        other_sale_id UUID NOT NULL
+          REFERENCES other_sales(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
+        unit_price NUMERIC(14,2) NOT NULL DEFAULT 0,
+        subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_other_sales_date
+      ON other_sales(sale_date)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_other_sales_receive
+      ON other_sales(receive_status,status)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_other_sale_items_sale
+      ON other_sale_items(other_sale_id)
+    `);
+
+    console.log('OK: módulo Otras ventas disponible.');
+  } catch (e) {
+    console.error('ERROR preparando Otras ventas:', e.message);
+    throw e;
+  }
+})();
+
 
 // La tabla de pagos histórica permanece intacta; la marca es aditiva.
 const accountsPayableReady = pool.query(`
@@ -2987,6 +3451,7 @@ async function startServer() {
     await purchaseOrderItemsReady;
     await accountsPayableReady;
     await saleItemsReady;
+    await otherSalesReady;
     await reconcileSaleLinks();
 
     app.listen(port, () => {
