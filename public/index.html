@@ -1256,6 +1256,25 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 @media(max-width:900px){.tm-os-options{grid-template-columns:1fr}.tm-os-item-row{grid-template-columns:1fr 90px 120px 38px}}
 @media(max-width:620px){.tm-os-item-row{grid-template-columns:1fr 1fr}.tm-os-item-desc{grid-column:1/-1}.tm-os-remove{align-self:end}.tm-os-options{grid-template-columns:1fr}}
 </style>
+<style>
+.tm-sales-filters{display:flex;gap:12px;align-items:center;margin:12px 0;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px}
+.tm-sales-search-wrap{flex:1;display:flex;align-items:center;gap:8px;border:1px solid #cbd5e1;border-radius:9px;padding:0 11px;background:#fff}
+.tm-sales-search-wrap input{width:100%;height:40px;border:0;outline:0;font-size:14px}
+.tm-sales-filters select{height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;background:#fff}
+.tm-sales-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.tm-sales-summary>div{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.tm-sales-summary span{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase}.tm-sales-summary strong{font-size:22px}.tm-sales-summary small{color:#64748b}
+.tm-sales-summary .received{border-color:#86efac}.tm-sales-summary .pending{border-color:#f59e0b}
+.tm-sales-table-card{padding:0;overflow:hidden}.tm-sales-table{margin:0;width:100%}.tm-sales-services{max-width:330px;white-space:normal;line-height:1.3}
+.tm-sale-control-badge{display:inline-block;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.tm-sale-control-badge.pending{background:#ffedd5;color:#c2410c;border:1px solid #fdba74}
+.tm-sale-control-badge.received{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.tm-sale-control-badge.historical{background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1}
+.tm-sale-receive-btn{background:#15803d!important;color:#fff!important;border:1px solid #15803d!important}
+.tm-sales-actions{display:flex;gap:5px;flex-wrap:wrap;min-width:210px}.tm-sales-actions button{padding:7px 9px;font-size:12px}
+.tm-sales-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid #e2e8f0}.tm-sales-pagination>div{display:flex;gap:5px}.tm-sales-pagination button{padding:7px 10px}
+@media(max-width:900px){.tm-sales-summary{grid-template-columns:1fr 1fr}.tm-sales-filters{flex-direction:column;align-items:stretch}.tm-sales-pagination{flex-direction:column;align-items:flex-start}}
+</style>
 </head>
 <body><div id="tm-auth-screen" style="display:none;position:fixed;inset:0;background:#f4f6f8;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border:1px solid #ddd;border-radius:14px;padding:28px;width:min(430px,100%);box-shadow:0 10px 30px #0001">
@@ -6458,131 +6477,247 @@ function tmSalePassengerLabel(s){
 }
 
 
+let tmSalesPage=1;
+let tmSalesSearch='';
+let tmSalesControl='Todos';
+const TM_SALES_PAGE_SIZE=50;
+
+function tmCompactNumber(value){
+ const raw=String(value||'');
+ const m=raw.match(/^[A-Z]+-(\d+)$/i);
+ if(!m)return raw;
+ return String(Number(m[1]));
+}
+
+function tmSaleOrderNumber(s){
+ return db.orders.find(o=>o.id===s.orderId || o.saleId===s.id)?.number||'';
+}
+
+function tmSaleSearchText(s){
+ return [
+   s.number,
+   tmCompactNumber(s.number),
+   s.op,
+   tmCompactNumber(s.op),
+   tmSaleOrderNumber(s),
+   tmCompactNumber(tmSaleOrderNumber(s)),
+   s.customerName,
+   s.seller,
+   tmSaleServiceLabel(s),
+   s.gtiReference,
+   s.paymentMethod
+ ].join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+
+function tmSaleControlBadge(s){
+ const status=s.receiveStatus||'Histórico';
+ if(status==='Recibido'){
+   return '<span class="tm-sale-control-badge received">✓ Recibido</span>';
+ }
+ if(status==='Pendiente'){
+   return '<span class="tm-sale-control-badge pending">Pendiente</span>';
+ }
+ return '<span class="tm-sale-control-badge historical">Histórico</span>';
+}
+
+function tmSalesTotals(rows){
+ return rows.reduce((out,s)=>{
+   if((s.receiveStatus||'Histórico')==='Histórico')return out;
+   const c=s.currency||'USD';
+   if(!out[c])out[c]={total:0,pending:0,received:0};
+   out[c].total+=Number(s.total||0);
+   if(s.receiveStatus==='Pendiente')out[c].pending+=Number(s.total||0);
+   if(s.receiveStatus==='Recibido')out[c].received+=Number(s.total||0);
+   return out;
+ },{});
+}
+
+function tmSalesTotalText(totals,key){
+ const values=Object.entries(totals).map(([currency,x])=>
+   payMoney(x[key]||0,currency)
+ );
+ return values.join(' · ')||'$0.00';
+}
+
+function tmSalesSetSearch(value){
+ tmSalesSearch=value||'';
+ tmSalesPage=1;
+ render();
+}
+
+function tmSalesSetControl(value){
+ tmSalesControl=value||'Todos';
+ tmSalesPage=1;
+ render();
+}
+
+function tmSalesGoPage(page){
+ tmSalesPage=Math.max(1,page);
+ render();
+}
+
+async function tmReceiveSale(id){
+ const s=db.sales.find(x=>x.id===id);
+ if(!s)return;
+ modal('Confirmar dinero recibido',`
+   <p>Vas a marcar la venta <b>${esc(tmCompactNumber(s.number))}</b> por <b>${payMoney(s.total,s.currency||'USD')}</b> como <b>Recibido</b>.</p>
+   <p style="color:#64748b">La confirmación quedará registrada con tu usuario, fecha y hora.</p>
+   <label>Observación (opcional)
+     <textarea id="tmSaleReceiveNote" rows="3" maxlength="1000" style="width:100%;margin-top:6px"></textarea>
+   </label>
+   <div class="actions">
+     <button class="secondary" onclick="closeModal()">Cancelar</button>
+     <button class="primary" onclick="tmConfirmReceiveSale('${id}')">Confirmar recibido</button>
+   </div>
+ `);
+}
+
+async function tmConfirmReceiveSale(id){
+ try{
+   const r=await fetch('/api/sales/'+id+'/receive',{
+     method:'PATCH',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({note:$('tmSaleReceiveNote')?.value||''})
+   });
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok)throw new Error(d.error||'No fue posible confirmar el dinero.');
+   const s=db.sales.find(x=>x.id===id);
+   if(s){
+     s.receiveStatus='Recibido';
+     s.receivedBy=TM_AUTH?.user?.name||'';
+     s.receivedAt=d.sale?.received_at||new Date().toISOString();
+     s.receiveNote=$('tmSaleReceiveNote')?.value||'';
+   }
+   closeModal();
+   render();
+ }catch(e){
+   const box=$('modalBox');
+   if(box)box.insertAdjacentHTML('beforeend','<div style="color:#b91c1c;margin-top:10px">'+esc(e.message)+'</div>');
+ }
+}
+
 function sales(){
+ const q=String(tmSalesSearch||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 
-  const rows=db.sales
-    .slice()
-    .sort(
-      (a,b)=>
-        b.number.localeCompare(a.number)
-    );
+ let rows=db.sales
+   .slice()
+   .sort((a,b)=>Number(tmCompactNumber(b.number)||0)-Number(tmCompactNumber(a.number)||0));
 
-  return `
-    <div class="toolbar">
+ if(q){
+   rows=rows.filter(s=>tmSaleSearchText(s).includes(q));
+ }
 
-      <div>
-        <h2>
-          Ventas / facturas internas
-        </h2>
+ if(tmSalesControl!=='Todos'){
+   rows=rows.filter(s=>(s.receiveStatus||'Histórico')===tmSalesControl);
+ }
 
-        <small>
-          La venta se genera opcionalmente desde la OC.
-        </small>
-      </div>
+ const totals=tmSalesTotals(rows);
+ const pageCount=Math.max(1,Math.ceil(rows.length/TM_SALES_PAGE_SIZE));
+ if(tmSalesPage>pageCount)tmSalesPage=pageCount;
+ const from=(tmSalesPage-1)*TM_SALES_PAGE_SIZE;
+ const pageRows=rows.slice(from,from+TM_SALES_PAGE_SIZE);
 
-    </div>
+ const pageButtons=[];
+ const first=Math.max(1,tmSalesPage-2);
+ const last=Math.min(pageCount,tmSalesPage+2);
+ for(let p=first;p<=last;p++){
+   pageButtons.push(`<button class="${p===tmSalesPage?'primary':'secondary'}" onclick="tmSalesGoPage(${p})">${p}</button>`);
+ }
 
-    <div class="card">
+ return `
+   <div class="tm-sales-screen">
+     <div class="toolbar tm-sales-toolbar">
+       <div>
+         <h2>Ventas / facturas internas</h2>
+         <small>Control de facturación y recepción de dinero.</small>
+       </div>
+     </div>
 
-      ${
-        rows.length
-        ?`
-          <table>
+     <div class="tm-sales-filters">
+       <div class="tm-sales-search-wrap">
+         <span>⌕</span>
+         <input
+           value="${esc(tmSalesSearch)}"
+           oninput="tmSalesSetSearch(this.value)"
+           placeholder="Buscar venta, OP, OC, cliente, servicio, vendedor o referencia GTI..."
+         >
+       </div>
+       <select onchange="tmSalesSetControl(this.value)">
+         <option value="Todos" ${tmSalesControl==='Todos'?'selected':''}>Todos</option>
+         <option value="Pendiente" ${tmSalesControl==='Pendiente'?'selected':''}>Pendientes</option>
+         <option value="Recibido" ${tmSalesControl==='Recibido'?'selected':''}>Recibidos</option>
+         <option value="Histórico" ${tmSalesControl==='Histórico'?'selected':''}>Histórico</option>
+       </select>
+     </div>
 
-            <tr>
-              <th>Venta</th>
-              <th>Operación</th>
-              <th>Cliente</th>
-              <th>Vendedor</th>
-              <th>Servicios</th>
-              <th>Pasajeros</th>
-              <th>Fecha servicio</th>
-              <th>Total</th>
-              <th>Acción</th>
-            </tr>
+     <div class="tm-sales-summary">
+       <div><span>Ventas controladas</span><strong>${tmSalesTotalText(totals,'total')}</strong></div>
+       <div class="received"><span>Recibido</span><strong>${tmSalesTotalText(totals,'received')}</strong></div>
+       <div class="pending"><span>Pendiente</span><strong>${tmSalesTotalText(totals,'pending')}</strong></div>
+       <div><span>Resultados</span><strong>${rows.length}</strong><small>50 por página</small></div>
+     </div>
 
-            ${
-              rows.map(s=>`
-
-                <tr>
-
-                  <td>
-                    ${esc(s.number)}
-                  </td>
-
-                  <td>
-                    ${esc(s.op)}
-                  </td>
-
-                  <td>
-                    ${esc(s.customerName)}
-                  </td>
-
-                  <td>
-                    ${esc(s.seller)}
-                  </td>
-
-                  <td style="
-                    max-width:310px;
-                    white-space:normal;
-                    line-height:1.35
-                  ">
-                    ${esc(tmSaleServiceLabel(s))}
-                  </td>
-
-                  <td style="text-align:center">
-                    ${tmSalePassengerLabel(s)}
-                  </td>
-
-                  <td>
-                    ${
-                      dateOnly(s.serviceDate)
-                        .split('-')
-                        .reverse()
-                        .join('/')
-                    }
-                  </td>
-
-                  <td>
-                    <strong>
-                      ${money(s.total)}
-                    </strong>
-                  </td>
-
-                  <td style="white-space:nowrap">
-
-                    <button
-                      class="secondary"
-                      onclick="previewSale('${s.id}')"
-                    >
-                      Vista previa
-                    </button>
-
-                    <button
-                      class="secondary"
-                      onclick="editSaleForm('${s.id}')"
-                    >
-                      Editar
-                    </button>
-
-                  </td>
-
-                </tr>
-
-              `).join('')
-            }
-
-          </table>
-        `
-        :`
-          <div class="empty">
-            No hay ventas. Genere la factura desde una OC.
-          </div>
-        `
-      }
-
-    </div>
-  `;
+     <div class="card tm-sales-table-card">
+       ${pageRows.length ? `
+       <div style="overflow:auto">
+       <table class="tm-sales-table">
+         <thead>
+           <tr>
+             <th>Venta</th>
+             <th>OP</th>
+             <th>OC</th>
+             <th>Cliente</th>
+             <th>Vendedor</th>
+             <th>Servicios</th>
+             <th>Ref. GTI</th>
+             <th>Pago</th>
+             <th>Total</th>
+             <th>Control</th>
+             <th>Acción</th>
+           </tr>
+         </thead>
+         <tbody>
+         ${pageRows.map(s=>`
+           <tr>
+             <td><b>${esc(tmCompactNumber(s.number))}</b></td>
+             <td>${esc(tmCompactNumber(s.op))}</td>
+             <td>${esc(tmCompactNumber(tmSaleOrderNumber(s))||'—')}</td>
+             <td>${esc(s.customerName)}</td>
+             <td>${esc(s.seller)}</td>
+             <td class="tm-sales-services">${esc(tmSaleServiceLabel(s))}</td>
+             <td>${esc(s.gtiReference||'—')}</td>
+             <td>${esc(s.paymentMethod||'—')}</td>
+             <td><strong>${payMoney(s.total,s.currency||'USD')}</strong></td>
+             <td>
+               ${tmSaleControlBadge(s)}
+               ${s.receiveStatus==='Recibido'&&s.receivedBy?'<br><small>'+esc(s.receivedBy)+'</small>':''}
+             </td>
+             <td>
+               <div class="tm-sales-actions">
+                 <button class="secondary" onclick="previewSale('${s.id}')">Vista previa</button>
+                 <button class="secondary" onclick="editSaleForm('${s.id}')">Editar</button>
+                 ${s.receiveStatus==='Pendiente'&&tmCan('sales.receive')
+                   ?'<button class="tm-sale-receive-btn" onclick="tmReceiveSale(\''+s.id+'\')">Recibido</button>'
+                   :''}
+               </div>
+             </td>
+           </tr>
+         `).join('')}
+         </tbody>
+       </table>
+       </div>
+       <div class="tm-sales-pagination">
+         <span>Mostrando ${rows.length?from+1:0}–${Math.min(from+TM_SALES_PAGE_SIZE,rows.length)} de ${rows.length}</span>
+         <div>
+           <button class="secondary" ${tmSalesPage<=1?'disabled':''} onclick="tmSalesGoPage(${tmSalesPage-1})">Anterior</button>
+           ${pageButtons.join('')}
+           <button class="secondary" ${tmSalesPage>=pageCount?'disabled':''} onclick="tmSalesGoPage(${tmSalesPage+1})">Siguiente</button>
+         </div>
+       </div>
+       ` : '<div class="empty">No se encontraron ventas con estos filtros.</div>'}
+     </div>
+   </div>
+ `;
 }
 
 
@@ -7083,7 +7218,7 @@ function saleForm(orderId){
 
       .tm-sale-options{
         display:grid;
-        grid-template-columns:1fr 1fr 1fr;
+        grid-template-columns:repeat(4,minmax(0,1fr));
         gap:14px;
         margin-top:18px;
       }
@@ -7476,7 +7611,7 @@ function saleForm(orderId){
             MEDIO DE PAGO *
           </label>
 
-          <select id="salePaymentMethod">
+          <select id="salePaymentMethod" onchange="tmSalePaymentChanged()">
 
             <option value="">
               Seleccione...
@@ -7498,6 +7633,22 @@ function saleForm(orderId){
 
         </div>
 
+
+        <div class="tm-sale-control-card">
+          <label id="saleGtiLabel">
+            REFERENCIA GTI
+          </label>
+          <input
+            id="saleGtiReference"
+            type="text"
+            maxlength="250"
+            placeholder="Digite la referencia"
+            style="width:100%;height:42px;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:9px;padding:0 11px"
+          >
+          <small id="saleGtiHint" style="display:block;color:#64748b;margin-top:6px">
+            Requerida para Tarjeta y Compra Click.
+          </small>
+        </div>
 
         <div class="tm-sale-control-card">
 
@@ -7621,7 +7772,22 @@ function saleForm(orderId){
   );
 
   saleCalc();
+  tmSalePaymentChanged();
 
+}
+
+function tmSalePaymentChanged(){
+ const method=$('salePaymentMethod')?.value||'';
+ const required=method==='Tarjeta'||method==='Compra Click';
+ const label=$('saleGtiLabel');
+ const input=$('saleGtiReference');
+ const hint=$('saleGtiHint');
+ if(label)label.textContent=required?'REFERENCIA GTI *':'REFERENCIA GTI';
+ if(input){
+   input.required=required;
+   input.style.borderColor=required&&!input.value.trim()?'#f59e0b':'#cbd5e1';
+ }
+ if(hint)hint.textContent=required?'Obligatoria para este medio de pago.':'Opcional para Cash.';
 }
 
 function saleCalc(){
@@ -7762,6 +7928,24 @@ async function createSale(orderId){
     );
   }
 
+  const gtiReference=
+    $('saleGtiReference')?.value?.trim() ||
+    '';
+
+  if(
+    (paymentMethod==='Tarjeta' || paymentMethod==='Compra Click') &&
+    !gtiReference
+  ){
+    const input=$('saleGtiReference');
+    if(input){
+      input.focus();
+      input.style.borderColor='#dc2626';
+    }
+    return alert(
+      'Debe ingresar la referencia GTI para Tarjeta o Compra Click.'
+    );
+  }
+
   const subtotal=
     items.reduce(
       (sum,item)=>
@@ -7823,6 +8007,8 @@ async function createSale(orderId){
     total:x.total,
     currency:o.currency,
     paymentMethod,
+    gtiReference,
+    receiveStatus:'Pendiente',
 
     // Nueva estructura multi-servicio.
     items:items.map((item,index)=>({
@@ -8836,7 +9022,7 @@ function saleDoc(s,ticket=false){
         <b>Vendedor:</b> ${esc(s.seller)}<br>
         <b>Tour:</b> ${esc(s.tour)}<br>
         <b>Servicio:</b> ${serviceDate}<br>
-        <b>Medio de pago:</b> ${method}
+        <b>Medio de pago:</b> ${method}${s.gtiReference?'<br><b>Referencia GTI:</b> '+esc(s.gtiReference):''}
 
         <hr>
 
@@ -8870,7 +9056,7 @@ function saleDoc(s,ticket=false){
           <b>Tour:</b> ${esc(s.tour)}<br>
           <b>Fecha de servicio:</b> ${serviceDate}<br>
           <b>Pasajeros:</b> ${s.pax}<br>
-          <b>Medio de pago:</b> ${method}
+          <b>Medio de pago:</b> ${method}${s.gtiReference?'<br><b>Referencia GTI:</b> '+esc(s.gtiReference):''}
 
         </div>
 
@@ -8986,7 +9172,7 @@ function saleDoc(s,ticket=false){
       <b>Cliente:</b> ${esc(s.customerName)}<br>
       <b>Vendedor:</b> ${esc(s.seller)}<br>
       <b>Fecha servicio:</b> ${serviceDate}<br>
-      <b>Medio de pago:</b> ${method}
+      <b>Medio de pago:</b> ${method}${s.gtiReference?'<br><b>Referencia GTI:</b> '+esc(s.gtiReference):''}
 
       <hr>
 
@@ -9023,7 +9209,7 @@ function saleDoc(s,ticket=false){
         <b>Cliente:</b> ${esc(s.customerName)}<br>
         <b>Vendedor:</b> ${esc(s.seller)}<br>
         <b>Fecha de servicio:</b> ${serviceDate}<br>
-        <b>Medio de pago:</b> ${method}
+        <b>Medio de pago:</b> ${method}${s.gtiReference?'<br><b>Referencia GTI:</b> '+esc(s.gtiReference):''}
 
       </div>
 
@@ -11708,7 +11894,7 @@ async function init(){try{db=await loadDB();appReady=true;render()}catch(e){cons
 .tm-uitem{padding:11px;border-bottom:1px solid #eee;cursor:pointer}.tm-uitem strong{display:block}.tm-uitem small{opacity:.65}
 .tm-pgroup{border:1px solid #e3e3e3;border-radius:9px;margin:10px 0;overflow:hidden}
 .tm-ptitle{padding:9px 11px;background:#f6f6f6;font-weight:700}
-.tm-prow{display:grid;grid-template-columns:1fr 75px 75px 75px 75px;align-items:center;padding:8px 11px;border-top:1px solid #eee}
+.tm-prow{display:grid;grid-template-columns:1fr repeat(5,75px);align-items:center;padding:8px 11px;border-top:1px solid #eee}
 .tm-prow input{width:17px;height:17px}
 @media(max-width:800px){#tm-users-admin>div:nth-child(2){grid-template-columns:1fr!important}#tm-user-form>div:first-of-type{grid-template-columns:1fr!important}.tm-prow{grid-template-columns:1fr 50px 50px 50px 50px}}
 </style>
@@ -11720,7 +11906,7 @@ const catalog=[
 ['Vendedores','sellers',['view','create','edit','delete']],
 ['Tours','tours',['view','create','edit','delete']],
 ['Órdenes de compra','purchase_orders',['view','create','edit','delete']],
-['Ventas','sales',['view','create','edit','delete']],
+['Ventas','sales',['view','create','edit','delete','receive']],
 ['Pagos','payments',['view','create','edit','delete']],
 ['Otras ventas','other_sales',['view','create','receive','cancel']],
 ['Reportes','reports',['service_dates.view','sellers.view','sales_analysis.view','best_sellers.view']],
@@ -11738,11 +11924,11 @@ function renderPermissions(selected=[]){
  $('tm-permissions-grid').innerHTML=catalog.map(([title,prefix,acts])=>{
   if(prefix==='reports'){
     return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
-      acts.map(a=>{let p=prefix+'.'+a;return '<label class="tm-prow"><span>'+labels[a]+'</span><span></span><span><input type="checkbox" data-perm="'+p+'" '+(s.has(p)?'checked':'')+'></span><span></span><span></span></label>'}).join('')+'</div>';
+      acts.map(a=>{let p=prefix+'.'+a;return '<label class="tm-prow"><span>'+labels[a]+'</span><span></span><span><input type="checkbox" data-perm="'+p+'" '+(s.has(p)?'checked':'')+'></span><span></span><span></span><span></span></label>'}).join('')+'</div>';
   }
-  const headers=prefix==='other_sales'
-    ?['Ver','Crear','Recibido','Anular']
-    :['Ver','Crear','Editar','Eliminar'];
+  let headers=['Ver','Crear','Editar','Eliminar'];
+  if(prefix==='other_sales')headers=['Ver','Crear','Recibido','Anular'];
+  if(prefix==='sales')headers=['Ver','Crear','Editar','Eliminar','Recibido'];
   return '<div class="tm-pgroup"><div class="tm-ptitle">'+title+'</div>'+
     '<div class="tm-prow" style="font-weight:600"><span></span>'+headers.map(x=>'<span>'+x+'</span>').join('')+'</div>'+
     '<div class="tm-prow"><span>Permisos</span>'+acts.map(a=>'<span><input type="checkbox" data-perm="'+prefix+'.'+a+'" '+(s.has(prefix+'.'+a)?'checked':'')+'></span>').join('')+'</div>'+
