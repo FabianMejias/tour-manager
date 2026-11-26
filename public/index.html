@@ -5707,8 +5707,7 @@ function orderDoc(o,ticket=false){
    <div class="ticket">
      ${base}
 
-     <b>OC:</b> ${o.number}<br>
-     <b>Operación:</b> ${o.op}<br>
+     <b>OC:</b> ${tmCompactNumber(o.number)}<br>
      <b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br>
      <b>Cliente:</b> ${esc(o.customerName)}<br>
      <b>Vendedor:</b> ${esc(o.seller)}<br>
@@ -5751,8 +5750,7 @@ function orderDoc(o,ticket=false){
      ${base}
 
      <div class="meta">
-       <b>OC:</b> ${o.number}<br>
-       <b>Operación:</b> ${o.op}<br>
+       <b>OC:</b> ${tmCompactNumber(o.number)}<br>
        <b>Proveedor:</b> ${esc(supplier(o.supplierId))}<br>
        <b>Nombre del Cliente:</b> ${esc(o.customerName)}<br>
        <b>Vendedor:</b> ${esc(o.seller)}<br>
