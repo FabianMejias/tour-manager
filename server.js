@@ -30,7 +30,7 @@ const TM_PERMISSIONS = [
   'sellers.view','sellers.create','sellers.edit','sellers.delete',
   'tours.view','tours.create','tours.edit','tours.delete',
   'purchase_orders.view','purchase_orders.create','purchase_orders.edit','purchase_orders.delete',
-  'sales.view','sales.create','sales.edit','sales.delete',
+  'sales.view','sales.create','sales.edit','sales.delete','sales.receive',
   'payments.view','payments.create','payments.edit','payments.delete',
   'other_sales.view','other_sales.create','other_sales.receive','other_sales.cancel',
   'reports.service_dates.view',
@@ -2642,6 +2642,62 @@ app.patch('/api/tour-rates/:id/status', async (req,res) => {
   }
 })();
 
+
+const salesControlReady = (async () => {
+  try {
+    await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS gti_reference TEXT`);
+    await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS receive_status TEXT`);
+    await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS received_by_user_id UUID REFERENCES users(id)`);
+    await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS receive_note TEXT`);
+
+    await pool.query(`
+      UPDATE sales
+      SET receive_status='Histórico'
+      WHERE receive_status IS NULL
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_receive_status ON sales(receive_status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_gti_reference ON sales(gti_reference)`);
+
+    console.log('OK: control de recepción y referencia GTI disponible en ventas.');
+  } catch (e) {
+    console.error('ERROR preparando control de ventas:', e.message);
+    throw e;
+  }
+})();
+
+app.patch('/api/sales/:id/receive', async (req,res) => {
+  if (!req.session.user) return res.status(401).json({error:'No autenticado.'});
+  if (!(await tmHasPermission(req,'sales.receive')))
+    return res.status(403).json({error:'No tiene permiso para confirmar dinero recibido.'});
+
+  const note=String(req.body?.note||'').trim();
+  if(note.length>1000)
+    return res.status(400).json({error:'La observación es demasiado extensa.'});
+
+  try {
+    await salesControlReady;
+    const r=await pool.query(`
+      UPDATE sales
+      SET receive_status='Recibido',
+          received_by_user_id=$1,
+          received_at=NOW(),
+          receive_note=$2
+      WHERE id=$3 AND receive_status='Pendiente'
+      RETURNING id,number,receive_status,received_at,total,currency
+    `,[req.session.user.id,note||null,req.params.id]);
+
+    if(!r.rows.length)
+      return res.status(409).json({error:'La factura ya fue recibida o pertenece al historial anterior.'});
+
+    res.json({ok:true,sale:r.rows[0]});
+  } catch(e) {
+    console.error('Error confirmando dinero de venta:',e);
+    res.status(500).json({error:'No fue posible confirmar el dinero recibido.'});
+  }
+});
+
 app.get('/api/health', async (req,res) => {
   try { const r=await q('SELECT NOW() AS now'); res.json({ok:true, database:true, time:r.rows[0].now}); }
   catch(e){ res.status(500).json({ok:false,error:'Database connection failed'}); }
@@ -2683,7 +2739,7 @@ async function getState(client) {
       ORDER BY t.name
     `),
     client.query(`SELECT id,number,operation_number,client_id,supplier_id,seller_id,tour_id,client_name,issue_date,service_date,service_time,pickup_place,drop_off,passengers,unit_cost,subtotal,tax_rate,tax_amount,total,currency,notes,payment_status,payment_date,payment_receipt,sale_id,updated_at,updated_by_user_id,status,cancellation_reason,cancellation_notes,cancelled_at,cancelled_by_user_id FROM purchase_orders ORDER BY number DESC`),
-    client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method FROM sales ORDER BY number DESC`),
+    client.query(`SELECT id,number,operation_number,client_id,seller_id,tour_id,client_name,service_date,passengers,unit_price,subtotal,discount_percent,discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method,gti_reference,receive_status,received_by_user_id,received_at,receive_note FROM sales ORDER BY number DESC`),
     client.query(`SELECT id,number,supplier_id,payment_date,receipt_number,total,notes,is_prepayment FROM payments ORDER BY number DESC`),
     client.query(`SELECT payment_id,purchase_order_id,amount FROM payment_purchase_orders`),
     client.query(`SELECT code,current_value FROM sequences`),
@@ -2800,7 +2856,7 @@ async function getState(client) {
       currentRateActive:x.current_rate_active
     })),
     orders: orders.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,clientId:x.client_id,client:cs[x.client_id]?.name||'',supplierId:x.supplier_id,sellerId:x.seller_id,tourId:x.tour_id,customerName:x.client_name,issueDate:x.issue_date,serviceDate:x.service_date,time:x.service_time,place:x.pickup_place||'',dropOff:x.drop_off||'',pax:x.passengers,unitCost:Number(x.unit_cost||0),subtotal:Number(x.subtotal||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',notes:x.notes||'',paymentStatus:x.payment_status||'Pendiente',paymentDate:x.payment_date,paymentReceipt:x.payment_receipt,saleId:x.sale_id,status:x.status||'active',cancellationReason:x.cancellation_reason||'',cancellationNotes:x.cancellation_notes||'',cancelledAt:x.cancelled_at||null,cancelledByUserId:x.cancelled_by_user_id||null,cancelledByUser:usersById[x.cancelled_by_user_id]?.name||'',updatedAt:x.updated_at,updatedByUserId:x.updated_by_user_id||null,updatedByUser:usersById[x.updated_by_user_id]?.name||'',seller:vs[x.seller_id]?.name||'',tour:ts[x.tour_id]?.name||'',items:orderItemsByOrder[x.id]||[]})),
-    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||'',items:saleItemsBySale[x.id]||[]})),
+    sales: sales.rows.map(x=>({id:x.id,number:x.number,op:x.operation_number,orderId:orders.rows.find(o=>o.sale_id===x.id)?.id||null,clientId:x.client_id,customerName:x.client_name,tourId:x.tour_id,tour:ts[x.tour_id]?.name||'',sellerId:x.seller_id,seller:vs[x.seller_id]?.name||'',serviceDate:x.service_date,pax:x.passengers,unitPrice:Number(x.unit_price||0),discount:Number(x.discount_percent||0),subtotal:Number(x.subtotal||0),discountAmount:Number(x.discount_amount||0),taxableAmount:Number(x.taxable_amount||0),taxRate:Number(x.tax_rate ?? 13),tax:Number(x.tax_amount||0),total:Number(x.total||0),currency:x.currency||'USD',paymentMethod:x.payment_method||'',gtiReference:x.gti_reference||'',receiveStatus:x.receive_status||'Histórico',receivedBy:usersById[x.received_by_user_id]?.name||'',receivedAt:x.received_at,receiveNote:x.receive_note||'',items:saleItemsBySale[x.id]||[]})),
     payments: payments.rows.map(x=>({id:x.id,number:x.number,supplierId:x.supplier_id,date:x.payment_date,receipt:x.receipt_number,total:Number(x.total||0),notes:x.notes||'',prepayment:x.is_prepayment,orderIds:links.rows.filter(l=>l.payment_id===x.id).map(l=>l.purchase_order_id)})),
     users: users.rows.map(x=>({id:x.id,name:x.name,email:x.email,role:x.role,active:x.active})),
     seq: Object.fromEntries(sequences.rows.map(x=>[x.code,Number(x.current_value)])),
@@ -2878,14 +2934,13 @@ async function replaceState(client, db) {
     // ========================================================
 
     const incomingSales = db.sales || [];
+    const existingSaleIds = new Set();
 
     if (incomingSales.length) {
 
       const incomingSaleIds = incomingSales
         .map(x => x.id)
         .filter(Boolean);
-
-      const existingSaleIds = new Set();
 
       if (incomingSaleIds.length) {
 
@@ -2954,6 +3009,26 @@ async function replaceState(client, db) {
     }
 
     for (const x of incomingSales) {
+
+      const isNewSale = !existingSaleIds.has(x.id);
+      const paymentMethod = String(x.paymentMethod||'').trim();
+      const gtiReference = String(x.gtiReference||'').trim();
+
+      if (
+        isNewSale &&
+        (paymentMethod === 'Tarjeta' || paymentMethod === 'Compra Click') &&
+        !gtiReference
+      ) {
+        const err = new Error('La referencia GTI es obligatoria para Tarjeta y Compra Click.');
+        err.code = 'GTI_REFERENCE_REQUIRED';
+        throw err;
+      }
+
+      if (gtiReference.length > 250) {
+        const err = new Error('La referencia GTI es demasiado extensa.');
+        err.code = 'GTI_REFERENCE_TOO_LONG';
+        throw err;
+      }
 
       // ======================================================
       // TOTALES AUTORITATIVOS PARA FACTURAS CON ITEMS
@@ -3078,9 +3153,10 @@ async function replaceState(client, db) {
         INSERT INTO sales(
           id,number,operation_number,client_id,seller_id,tour_id,client_name,
           service_date,passengers,unit_price,subtotal,discount_percent,
-          discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method
+          discount_amount,taxable_amount,tax_rate,tax_amount,total,currency,payment_method,
+          gti_reference,receive_status
         )
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
         ON CONFLICT(id) DO UPDATE SET
           client_id=EXCLUDED.client_id,
           seller_id=EXCLUDED.seller_id,
@@ -3097,7 +3173,8 @@ async function replaceState(client, db) {
           tax_amount=EXCLUDED.tax_amount,
           total=EXCLUDED.total,
           currency=EXCLUDED.currency,
-          payment_method=EXCLUDED.payment_method
+          payment_method=EXCLUDED.payment_method,
+          gti_reference=EXCLUDED.gti_reference
       `,[
         x.id,x.number,x.op,x.clientId,x.sellerId,x.tourId,x.customerName,
         x.serviceDate,x.pax||1,Number(x.unitPrice||0),Number(x.subtotal||0),
@@ -3105,7 +3182,9 @@ async function replaceState(client, db) {
         Number(x.taxableAmount||((x.subtotal||0)-(x.discountAmount||0))),
         Number(x.taxRate ?? 13),Number(x.tax||0),Number(x.total||0),
         x.currency||'USD',
-        x.paymentMethod||null
+        x.paymentMethod||null,
+        gtiReference||null,
+        isNewSale ? 'Pendiente' : (x.receiveStatus||'Histórico')
       ]);
 
       // ======================================================
@@ -3466,6 +3545,7 @@ async function startServer() {
     await accountsPayableReady;
     await saleItemsReady;
     await otherSalesReady;
+    await salesControlReady;
     await reconcileSaleLinks();
 
     app.listen(port, () => {
