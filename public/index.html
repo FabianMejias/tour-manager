@@ -6542,7 +6542,23 @@ function tmSalesTotalText(totals,key){
 function tmSalesSetSearch(value){
  tmSalesSearch=value||'';
  tmSalesPage=1;
- render();
+ clearTimeout(window.__tmSalesSearchTimer);
+ window.__tmSalesSearchTimer=setTimeout(()=>{
+   const input=document.activeElement;
+   const cursor=input&&input.tagName==='INPUT'?input.selectionStart:null;
+   const currentValue=tmSalesSearch;
+   render();
+   requestAnimationFrame(()=>{
+     const next=document.querySelector('.tm-sales-search-wrap input');
+     if(next){
+       next.focus();
+       if(cursor!=null){
+         const pos=Math.min(cursor,currentValue.length);
+         next.setSelectionRange(pos,pos);
+       }
+     }
+   });
+ },120);
 }
 
 function tmSalesSetControl(value){
@@ -6639,7 +6655,7 @@ function sales(){
          <input
            value="${esc(tmSalesSearch)}"
            oninput="tmSalesSetSearch(this.value)"
-           placeholder="Buscar venta, OP, OC, cliente, servicio, vendedor o referencia GTI..."
+           placeholder="Buscar venta, OC, cliente, servicio, vendedor o referencia GTI..."
          >
        </div>
        <select onchange="tmSalesSetControl(this.value)">
@@ -6664,7 +6680,6 @@ function sales(){
          <thead>
            <tr>
              <th>Venta</th>
-             <th>OP</th>
              <th>OC</th>
              <th>Cliente</th>
              <th>Vendedor</th>
@@ -6680,7 +6695,6 @@ function sales(){
          ${pageRows.map(s=>`
            <tr>
              <td><b>${esc(tmCompactNumber(s.number))}</b></td>
-             <td>${esc(tmCompactNumber(s.op))}</td>
              <td>${esc(tmCompactNumber(tmSaleOrderNumber(s))||'—')}</td>
              <td>${esc(s.customerName)}</td>
              <td>${esc(s.seller)}</td>
